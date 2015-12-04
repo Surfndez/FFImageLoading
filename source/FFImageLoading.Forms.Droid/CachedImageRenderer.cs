@@ -9,8 +9,10 @@ using FFImageLoading.Forms.Droid;
 using FFImageLoading.Forms;
 using Android.Runtime;
 using FFImageLoading.Views;
-using FFImageLoading.Helpers;
-using System.Threading;
+using Android.Graphics.Drawables;
+using Android.Graphics;
+using System.IO;
+using System.Threading.Tasks;
 
 [assembly: ExportRenderer(typeof(CachedImage), typeof(CachedImageRenderer))]
 namespace FFImageLoading.Forms.Droid
@@ -26,18 +28,18 @@ namespace FFImageLoading.Forms.Droid
 		/// </summary>
 		public static void Init()
 		{
-            CachedImage.CacheCleared += CachedImageCacheCleared;
-            CachedImage.CacheInvalidated += CachedImageCacheInvalidated;
+			CachedImage.InternalClearCache = new Action<FFImageLoading.Cache.CacheType>(ClearCache);
+			CachedImage.InternalInvalidateCache = new Action<string, FFImageLoading.Cache.CacheType>(InvalidateCache);
         }
 
-        private static void CachedImageCacheInvalidated(object sender, CachedImageEvents.CacheInvalidatedEventArgs e)
+		private static void InvalidateCache(string key, Cache.CacheType cacheType)
         {
-            ImageService.Invalidate(e.Key, e.CacheType);
+            ImageService.Invalidate(key, cacheType);
         }
 
-        private static void CachedImageCacheCleared(object sender, CachedImageEvents.CacheClearedEventArgs e)
+		private static void ClearCache(Cache.CacheType cacheType)
         {
-            switch (e.CacheType)
+			switch (cacheType)
             {
                 case Cache.CacheType.Memory:
                     ImageService.InvalidateMemoryCache();
@@ -83,6 +85,8 @@ namespace FFImageLoading.Forms.Droid
 			if (e.NewElement != null)
 			{
 				e.NewElement.Cancelled += Cancel;
+				e.NewElement.InternalGetImageAsJPG = new Func<int, int, int, Task<byte[]>>(GetImageAsJPG);
+				e.NewElement.InternalGetImageAsPNG = new Func<int, int, int, Task<byte[]>>(GetImageAsPNG);
 			}
 			UpdateBitmap(e.OldElement);
 			UpdateAspect();
@@ -126,6 +130,7 @@ namespace FFImageLoading.Forms.Droid
 
 				if (Element != null && object.Equals(Element.Source, source) && !_isDisposed)
 				{
+					Cancel(this, EventArgs.Empty);
 					TaskParameter imageLoader = null;
 
 					var ffSource = ImageSourceBinding.GetImageSourceBinding(source);
@@ -217,7 +222,7 @@ namespace FFImageLoading.Forms.Droid
 			}
 		}
 
-		void ImageLoadingFinished(CachedImage element)
+		private void ImageLoadingFinished(CachedImage element)
 		{
 			if (element != null && !_isDisposed)
 			{
@@ -227,10 +232,66 @@ namespace FFImageLoading.Forms.Droid
 			}
 		}
 
-		public void Cancel(object sender, EventArgs args)
+		private void Cancel(object sender, EventArgs args)
 		{
 			if (_currentTask != null && !_currentTask.IsCancelled) {
 				_currentTask.Cancel ();
+			}
+		}
+
+		private Task<byte[]> GetImageAsJPG(int quality, int desiredWidth = 0, int desiredHeight = 0)
+		{
+			return GetImageAsByte(Bitmap.CompressFormat.Jpeg, quality, desiredWidth, desiredHeight);
+		}
+
+		private Task<byte[]> GetImageAsPNG(int quality, int desiredWidth = 0, int desiredHeight = 0)
+		{
+			return GetImageAsByte(Bitmap.CompressFormat.Png, quality, desiredWidth, desiredHeight);
+		}
+
+		private async Task<byte[]> GetImageAsByte(Bitmap.CompressFormat format, int quality, int desiredWidth, int desiredHeight)
+		{
+			if (Control == null)
+				return null;
+
+			var drawable = Control.Drawable as BitmapDrawable;
+
+			if (drawable == null || drawable.Bitmap == null)
+				return null;
+
+			Bitmap bitmap = drawable.Bitmap;
+
+			if (desiredWidth != 0 || desiredHeight != 0)
+			{
+				double widthRatio = (double)desiredWidth / (double)bitmap.Width;
+				double heightRatio = (double)desiredHeight / (double)bitmap.Height;
+
+				double scaleRatio = Math.Min(widthRatio, heightRatio);
+
+				if (desiredWidth == 0)
+					scaleRatio = heightRatio;
+
+				if (desiredHeight == 0)
+					scaleRatio = widthRatio;
+
+				int aspectWidth = (int)((double)bitmap.Width * scaleRatio);
+				int aspectHeight = (int)((double)bitmap.Height * scaleRatio);
+
+				bitmap = Bitmap.CreateScaledBitmap(bitmap, aspectWidth, aspectHeight, true);
+			}
+
+			using (var stream = new MemoryStream())
+			{
+				await bitmap.CompressAsync(format, quality, stream);
+				var compressed = stream.ToArray();
+
+				if (desiredWidth != 0 || desiredHeight != 0)
+				{
+					bitmap.Recycle();
+					bitmap.Dispose();
+				}
+
+				return compressed;
 			}
 		}
 	}

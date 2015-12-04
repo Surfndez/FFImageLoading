@@ -9,7 +9,8 @@ using FFImageLoading;
 using Foundation;
 using FFImageLoading.Forms;
 using FFImageLoading.Forms.Touch;
-using System.Collections.Generic;
+using FFImageLoading.Extensions;
+using System.Threading.Tasks;
 
 [assembly:ExportRenderer(typeof (CachedImage), typeof (CachedImageRenderer))]
 namespace FFImageLoading.Forms.Touch
@@ -29,33 +30,33 @@ namespace FFImageLoading.Forms.Touch
 		public static new void Init()
 		{
 			// needed because of this STUPID linker issue: https://bugzilla.xamarin.com/show_bug.cgi?id=31076
-			var dummy = new FFImageLoading.Forms.Touch.CachedImageRenderer();
+			var dummy = new CachedImageRenderer();
 
-            CachedImage.CacheCleared += CachedImageCacheCleared;
-            CachedImage.CacheInvalidated += CachedImageCacheInvalidated;
-        }
+			CachedImage.InternalClearCache = new Action<FFImageLoading.Cache.CacheType>(ClearCache);
+			CachedImage.InternalInvalidateCache = new Action<string, FFImageLoading.Cache.CacheType>(InvalidateCache);
+		}
 
-        private static void CachedImageCacheInvalidated(object sender, CachedImageEvents.CacheInvalidatedEventArgs e)
-        {
-            ImageService.Invalidate(e.Key, e.CacheType);
-        }
+		private static void InvalidateCache(string key, Cache.CacheType cacheType)
+		{
+			ImageService.Invalidate(key, cacheType);
+		}
 
-        private static void CachedImageCacheCleared(object sender, CachedImageEvents.CacheClearedEventArgs e)
-        {
-            switch (e.CacheType)
-            {
-                case Cache.CacheType.Memory:
-                    ImageService.InvalidateMemoryCache();
-                    break;
-                case Cache.CacheType.Disk:
-                    ImageService.InvalidateDiskCache();
-                    break;
-                case Cache.CacheType.All:
-                    ImageService.InvalidateMemoryCache();
-                    ImageService.InvalidateDiskCache();
-                    break;
-            }
-        }
+		private static void ClearCache(Cache.CacheType cacheType)
+		{
+			switch (cacheType)
+			{
+				case Cache.CacheType.Memory:
+					ImageService.InvalidateMemoryCache();
+					break;
+				case Cache.CacheType.Disk:
+					ImageService.InvalidateDiskCache();
+					break;
+				case Cache.CacheType.All:
+					ImageService.InvalidateMemoryCache();
+					ImageService.InvalidateDiskCache();
+					break;
+			}
+		}
 
         protected override void Dispose(bool disposing)
 		{
@@ -94,6 +95,8 @@ namespace FFImageLoading.Forms.Touch
 				SetOpacity();
 
 				e.NewElement.Cancelled += Cancel;
+				e.NewElement.InternalGetImageAsJPG = new Func<int, int, int, Task<byte[]>>(GetImageAsJPG);
+				e.NewElement.InternalGetImageAsPNG = new Func<int, int, int, Task<byte[]>>(GetImageAsPNG);
 			}
 			base.OnElementChanged(e);
 		}
@@ -142,6 +145,7 @@ namespace FFImageLoading.Forms.Touch
 
 			((IElementController)Element).SetValueFromRenderer(CachedImage.IsLoadingPropertyKey, true);
 
+			Cancel(this, EventArgs.Empty);
 			TaskParameter imageLoader = null;
 
 			var ffSource = ImageSourceBinding.GetImageSourceBinding(source);
@@ -230,7 +234,7 @@ namespace FFImageLoading.Forms.Touch
 			}
 		}
 
-		void ImageLoadingFinished(CachedImage element)
+		private void ImageLoadingFinished(CachedImage element)
 		{
 			if (element != null && !_isDisposed)
 			{
@@ -240,13 +244,50 @@ namespace FFImageLoading.Forms.Touch
 			}
 		}
 
-		public void Cancel(object sender, EventArgs args)
+		private void Cancel(object sender, EventArgs args)
 		{
 			if (_currentTask != null && !_currentTask.IsCancelled) {
 				_currentTask.Cancel ();
 			}
 		}
+			
+		private Task<byte[]> GetImageAsJPG(int quality, int desiredWidth = 0, int desiredHeight = 0)
+		{
+			return GetImageAsByte(false, quality, desiredWidth, desiredHeight);
+		}
 
+		private Task<byte[]> GetImageAsPNG(int quality, int desiredWidth = 0, int desiredHeight = 0)
+		{
+			return GetImageAsByte(true, quality, desiredWidth, desiredHeight);
+		}
+
+		private async Task<byte[]> GetImageAsByte(bool usePNG, int quality, int desiredWidth, int desiredHeight)
+		{
+			if (Control == null || Control.Image == null)
+				return null;
+
+			UIImage image = Control.Image;
+
+			if (desiredWidth != 0 || desiredHeight != 0)
+			{
+				image = image.ResizeUIImage((double)desiredWidth, (double)desiredHeight);
+			}
+
+			NSData imageData = usePNG ? image.AsPNG() : image.AsJPEG((nfloat)quality / 100f);
+
+			if (imageData == null || imageData.Length == 0)
+				return null;
+
+			var encoded = imageData.ToArray();
+			imageData.Dispose();
+
+			if (desiredWidth != 0 || desiredHeight != 0)
+			{
+				image.Dispose();
+			}
+
+			return encoded;
+		}
 	}
 }
 
