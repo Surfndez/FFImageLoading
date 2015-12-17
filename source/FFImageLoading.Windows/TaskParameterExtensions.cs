@@ -39,22 +39,20 @@ namespace FFImageLoading
 
                 if (isFadeAnimationEnabled && !fromCache)
                 {
-                    // fade animation
-                    var currentOpacity = refView.Opacity;
-                    refView.Opacity = 0f;
+					// fade animation
+					DoubleAnimation fade = new DoubleAnimation();
+					fade.Duration = TimeSpan.FromMilliseconds(400);
+					fade.From = 0f;
+					fade.To = 1f;
+					fade.EasingFunction = new CubicEase() { EasingMode = EasingMode.EaseInOut }; 
 
-                    DoubleAnimation fadeIn = new DoubleAnimation();
-                    fadeIn.Duration = TimeSpan.FromMilliseconds(400);
-                    fadeIn.From = 0f;
-                    fadeIn.To = 1f;
+					Storyboard fadeInStoryboard = new Storyboard();
 
-                    Storyboard fadeInStoryboard = new Storyboard();
-                    Storyboard.SetTargetProperty(fadeIn, "Image.Opacity");
-                    Storyboard.SetTarget(fadeIn, refView);
-                    fadeInStoryboard.Children.Add(fadeIn);
-
-                    refView.Source = img;
-                    fadeInStoryboard.Begin();
+					Storyboard.SetTargetProperty(fade, "Image.Opacity");
+					Storyboard.SetTarget(fade, refView);
+					fadeInStoryboard.Children.Add(fade);
+					fadeInStoryboard.Begin();
+					refView.Source = img;
                 }
                 else
                 {

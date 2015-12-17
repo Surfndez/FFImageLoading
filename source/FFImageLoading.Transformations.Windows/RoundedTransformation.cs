@@ -10,11 +10,8 @@ namespace FFImageLoading.Transformations
         private double _cropWidthRatio;
         private double _cropHeightRatio;
 
-        public RoundedTransformation(double radius)
+        public RoundedTransformation(double radius) : this(radius, 1d, 1d)
         {
-            _radius = radius;
-            _cropWidthRatio = 1f;
-            _cropHeightRatio = 1f;
         }
 
         public RoundedTransformation(double radius, double cropWidthRatio, double cropHeightRatio)
@@ -28,7 +25,7 @@ namespace FFImageLoading.Transformations
         {
             get
             {
-                return string.Format("RoundedTransformation, radius = {0}, cropWidthRatio = {1}, cropHeightRatio = {2}",
+                return string.Format("RoundedTransformation,radius={0},cropWidthRatio={1},cropHeightRatio={2}",
               _radius, _cropWidthRatio, _cropHeightRatio);
             }
         }
@@ -68,47 +65,37 @@ namespace FFImageLoading.Transformations
                 rad = (int)(Math.Min(desiredWidth, desiredHeight) / 2);
             else rad = (int)(rad * (desiredWidth + desiredHeight) / 2 / 500);
 
-            int x = 0;
-            int y = 0;
             int w = (int)desiredWidth;
             int h = (int)desiredHeight;
 
-            int atx = 0;
-            int aty = 0;
-
             int transparentColor = Colors.Transparent.ToInt();
 
-            for (int k = 0; k < h; k++)
+            for (int y = 0; y < h; y++)
             {
-                for (int j = 0; j < w; j++)
+                for (int x = 0; x < w; x++)
                 {
-                    atx = x + j;
-                    aty = y + k;
-
-                    if (atx <= x + rad && aty <= y + rad)
+                    if (x <= rad && y <= rad)
                     { //top left corner
-                        if (!CheckRoundedCorner(x + rad, y + rad, rad, Corner.TopLeftCorner, atx, aty))
-                            source.Pixels[aty * w + atx] = transparentColor;
+                        if (!CheckRoundedCorner(rad, rad, rad, Corner.TopLeftCorner, x, y))
+                            source.Pixels[y * w + x] = transparentColor;
                     }
-                    else if (atx >= x + w - rad && aty <= y + rad)
+                    else if (x >= w - rad && y <= rad)
                     { // top right corner
-                        if (!CheckRoundedCorner(x + w - rad, y + rad, rad, Corner.TopRightCorner, atx, aty))
-                            source.Pixels[aty * w + atx] = transparentColor;
+                        if (!CheckRoundedCorner(w - rad, rad, rad, Corner.TopRightCorner, x, y))
+                            source.Pixels[y * w + x] = transparentColor;
                     }
-                    else if (atx >= x + w - rad && aty >= y + h - rad)
+                    else if (x >= w - rad && y >= h - rad)
                     { // bottom right corner
-                        if (!CheckRoundedCorner(x + w - rad, y + h - rad, rad, Corner.BottomRightCorner, atx, aty))
-                            source.Pixels[aty * w + atx] = transparentColor;
+                        if (!CheckRoundedCorner(w - rad, h - rad, rad, Corner.BottomRightCorner, x, y))
+                            source.Pixels[y * w + x] = transparentColor;
                     }
-                    else if (atx <= x + rad && aty >= y + h - rad)
+                    else if (x <= rad && y >= h - rad)
                     { // bottom left corner
-                        if (!CheckRoundedCorner(x + rad, y + h - rad, rad, Corner.BottomLeftCorner, atx, aty))
-                            source.Pixels[aty * w + atx] = transparentColor;
+                        if (!CheckRoundedCorner(rad, h - rad, rad, Corner.BottomLeftCorner, x, y))
+                            source.Pixels[y * w + x] = transparentColor;
                     }
                 }
             }
-
-            x++;
         }
 
         private enum Corner
