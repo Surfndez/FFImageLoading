@@ -64,10 +64,10 @@ namespace FFImageLoading.Extensions
 
                 WriteableBitmap bitmap = null;
 
-                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () =>
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, async () =>
                 {
                     bitmap = new WriteableBitmap((int)decoder.PixelWidth, (int)decoder.PixelHeight);
-                    bitmap.SetSource(image);
+                    await bitmap.SetSourceAsync(image);
                 });
 
                 return bitmap;
@@ -89,21 +89,11 @@ namespace FFImageLoading.Extensions
             using (image)
             {
                 BitmapDecoder decoder = await BitmapDecoder.CreateAsync(image);
+                PixelDataProvider pixelDataProvider = await decoder.GetPixelDataAsync();
 
-                image.Seek(0);
-                int[] array = null;
-
-                WriteableBitmap bitmap = null;
-                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () =>
-                {
-                    bitmap = new WriteableBitmap((int)decoder.PixelWidth, (int)decoder.PixelHeight);
-                    bitmap.SetSource(image);
-
-                    var bytes = bitmap.PixelBuffer.ToArray();
-
-                    array = new int[bitmap.PixelWidth * bitmap.PixelHeight];
-                    CopyPixels(bytes, array);
-                });
+                var bytes = pixelDataProvider.DetachPixelData();
+                int[] array = new int[decoder.PixelWidth * decoder.PixelHeight];
+                CopyPixels(bytes, array);
 
                 return new BitmapHolder(array, (int)decoder.PixelWidth, (int)decoder.PixelHeight);
             }

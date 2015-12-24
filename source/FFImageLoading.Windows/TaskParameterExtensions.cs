@@ -37,6 +37,10 @@ namespace FFImageLoading
                 var isFadeAnimationEnabled = parameters.FadeAnimationEnabled.HasValue ?
                     parameters.FadeAnimationEnabled.Value : ImageService.Config.FadeAnimationEnabled;
 
+                bool imageChanged = (img != refView.Source);
+                if (!imageChanged)
+                    return;
+
                 if (isFadeAnimationEnabled && !fromCache)
                 {
 					// fade animation
@@ -73,6 +77,20 @@ namespace FFImageLoading
         {
             return parameters.IntoAsync(param => param.Into(imageView));
         }
+
+		/// <summary>
+		/// Invalidate the image corresponding to given parameters from given caches.
+		/// </summary>
+		/// <param name="parameters">Image parameters.</param>
+		/// <param name="cacheType">Cache type.</param>
+		public static void Invalidate(this TaskParameter parameters, CacheType cacheType)
+		{
+			using (var task = new ImageLoaderTask(ImageService.Config.DownloadCache, new MainThreadDispatcher(), ImageService.Config.Logger, parameters, null, null))
+			{
+				var key = task.GetKey();
+				ImageService.Invalidate(key, cacheType);
+			}
+		}
 
         private static IScheduledWork Into(this TaskParameter parameters, Func<Image> getNativeControl, Action<WriteableBitmap, bool> doWithImage)
         {

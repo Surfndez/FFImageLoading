@@ -82,7 +82,7 @@ namespace FFImageLoading.Work
 			UIImage image = null;
 			try
 			{
-				imageWithResult = await RetrieveImageAsync(Parameters.Path, Parameters.Source).ConfigureAwait(false);
+				imageWithResult = await RetrieveImageAsync(Parameters.Path, Parameters.Source, false).ConfigureAwait(false);
 				image = imageWithResult == null ? null : imageWithResult.Item;
 			}
 			catch (Exception ex)
@@ -181,7 +181,7 @@ namespace FFImageLoading.Work
 		/// </summary>
 		/// <returns>An awaitable task.</returns>
 		/// <param name="stream">The stream to get data from.</param>
-		public override async Task<GenerateResult> LoadFromStreamAsync(Stream stream)
+		public override async Task<GenerateResult> LoadFromStreamAsync(Stream stream, bool isPlaceholder)
 		{
 			if (stream == null)
 				return GenerateResult.Failed;
@@ -193,7 +193,7 @@ namespace FFImageLoading.Work
 			UIImage image = null;
 			try
 			{
-				imageWithResult = await GetImageAsync("Stream", ImageSource.Stream, stream).ConfigureAwait(false);
+				imageWithResult = await GetImageAsync("Stream", ImageSource.Stream, isPlaceholder, stream).ConfigureAwait(false);
 				image = imageWithResult == null ? null : imageWithResult.Item;
 			}
 			catch (Exception ex)
@@ -246,11 +246,13 @@ namespace FFImageLoading.Work
 			return GenerateResult.Success;
 		}
 
-		protected virtual async Task<WithLoadingResult<UIImage>> GetImageAsync(string sourcePath, ImageSource source, Stream originalStream = null)
+		protected virtual async Task<WithLoadingResult<UIImage>> GetImageAsync(string sourcePath, ImageSource source, 
+			bool isPlaceholder, Stream originalStream = null)
 		{
 			if (CancellationToken.IsCancellationRequested)
 				return null;
 
+			UIImage image = null;
 			byte[] bytes = null;
 			string path = sourcePath;
 			LoadingResult? result = null;
@@ -259,29 +261,37 @@ namespace FFImageLoading.Work
 			{
 				if (originalStream != null)
 				{
-					using (var ms = new MemoryStream())
+					try
 					{
-						await originalStream.CopyToAsync(ms).ConfigureAwait(false);
-						bytes = ms.ToArray();
-						path = sourcePath;
-						result = LoadingResult.Stream;
+						using (var ms = new MemoryStream())
+						{
+							await originalStream.CopyToAsync(ms).ConfigureAwait(false);
+							bytes = ms.ToArray();
+							path = sourcePath;
+							result = LoadingResult.Stream;
+						}
+					}
+					finally
+					{
+						originalStream.Dispose();
 					}
 				}
 				else
 				{
-					using (var resolver = DataResolverFactory.GetResolver(source, Parameters, DownloadCache))
+					using (var resolver = DataResolverFactory.GetResolver(source, Parameters, DownloadCache, MainThreadDispatcher))
 					{
 						var data = await resolver.GetData(path, CancellationToken.Token).ConfigureAwait(false);
 						if (data == null)
 							return null;
 
+						image = data.Image;
 						bytes = data.Data;
 						path = data.ResultIdentifier;
 						result = data.Result;
 					}
 				}
 			}
-			catch (System.OperationCanceledException oex)
+			catch (System.OperationCanceledException)
 			{
 				Logger.Debug(string.Format("Image request for {0} got cancelled.", path));
 				return null;
@@ -294,25 +304,28 @@ namespace FFImageLoading.Work
 				return null;
 			}
 
-			if (bytes == null)
+			if (bytes == null && image == null)
 				return null;
 
-			var image = await Task.Run(() =>
+			var imageToDisplay = await Task.Run(() =>
 				{
 					if (CancellationToken.IsCancellationRequested)
 						return null;
 
-					UIImage imageIn = null;
+					UIImage imageIn = image;
 
-					// Special case to handle WebP decoding on iOS
-					if (sourcePath.ToLowerInvariant().EndsWith(".webp", StringComparison.InvariantCulture))
+					if (imageIn == null)
 					{
-						imageIn = new WebP.Touch.WebPCodec().Decode(bytes);
-					}
-					else
-					{
-						nfloat scale = _imageScale >= 1 ? _imageScale : _screenScale;
-						imageIn = new UIImage(NSData.FromArray(bytes), scale);
+						// Special case to handle WebP decoding on iOS
+						if (sourcePath.ToLowerInvariant().EndsWith(".webp", StringComparison.InvariantCulture))
+						{
+							imageIn = new WebP.Touch.WebPCodec().Decode(bytes);
+						}
+						else
+						{
+							nfloat scale = _imageScale >= 1 ? _imageScale : _screenScale;
+							imageIn = new UIImage(NSData.FromArray(bytes), scale);
+						}
 					}
 
 					if (Parameters.DownSampleSize != null
@@ -324,7 +337,11 @@ namespace FFImageLoading.Work
 						tempImage.Dispose();
 					}
 
-					if (Parameters.Transformations != null && Parameters.Transformations.Count > 0)
+					bool transformPlaceholdersEnabled = Parameters.TransformPlaceholdersEnabled.HasValue ? 
+						Parameters.TransformPlaceholdersEnabled.Value : ImageService.Config.TransformPlaceholders;
+
+					if (Parameters.Transformations != null && Parameters.Transformations.Count > 0 
+						&& (!isPlaceholder || (isPlaceholder && transformPlaceholdersEnabled)))
 					{
 						foreach (var transformation in Parameters.Transformations.ToList() /* to prevent concurrency issues */)
 						{
@@ -350,7 +367,7 @@ namespace FFImageLoading.Work
 					return imageIn;
 				}).ConfigureAwait(false);
 
-			return WithLoadingResult.Encapsulate(image, result.Value);
+			return WithLoadingResult.Encapsulate(imageToDisplay, result.Value);
 		}
 
 		/// <summary>
@@ -369,7 +386,7 @@ namespace FFImageLoading.Work
 			{
 				try
 				{
-					var imageWithResult = await RetrieveImageAsync(placeholderPath, source).ConfigureAwait(false);
+					var imageWithResult = await RetrieveImageAsync(placeholderPath, source, true).ConfigureAwait(false);
 					image = imageWithResult == null ? null : imageWithResult.Item;
 				}
 				catch (Exception ex)
@@ -401,7 +418,7 @@ namespace FFImageLoading.Work
 			return true;
 		}
 
-		private async Task<WithLoadingResult<UIImage>> RetrieveImageAsync(string sourcePath, ImageSource source)
+		private async Task<WithLoadingResult<UIImage>> RetrieveImageAsync(string sourcePath, ImageSource source, bool isPlaceholder)
 		{
 			// If the image cache is available and this task has not been cancelled by another
 			// thread and the ImageView that was originally bound to this task is still bound back
@@ -410,7 +427,7 @@ namespace FFImageLoading.Work
 			if (CancellationToken.IsCancellationRequested || _getNativeControl() == null || ImageService.ExitTasksEarly)
 				return null;
 
-			var imageWithResult = await GetImageAsync(sourcePath, source).ConfigureAwait(false);
+			var imageWithResult = await GetImageAsync(sourcePath, source, isPlaceholder).ConfigureAwait(false);
 			if (imageWithResult == null || imageWithResult.Item == null)
 				return null;
 
