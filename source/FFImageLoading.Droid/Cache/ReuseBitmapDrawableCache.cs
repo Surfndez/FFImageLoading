@@ -119,7 +119,7 @@ namespace FFImageLoading.Cache
 					foreach (var k in reuse_keys) {
 						var bd = reuse_pool.Peek(k);
 
-						if (!bd.IsRetained && bd.Bitmap.IsMutable)
+						if (bd != null && bd.Handle != IntPtr.Zero && !bd.IsRetained && bd.Bitmap.IsMutable && !bd.Bitmap.IsRecycled && bd.HasValidBitmap)
 						{
 							if (CanUseForInBitmap(bd.Bitmap, width, height, bitmapConfig, inSampleSize))
 							{
@@ -158,7 +158,7 @@ namespace FFImageLoading.Cache
 			if (!Utils.HasKitKat())
 			{
 				// On earlier versions, the dimensions must match exactly and the inSampleSize must be 1
-				return item.Width == width && item.Height == height && inSampleSize == 1;
+				return item.Width == width && item.Height == height && GetBytesPerPixel(item.GetConfig()) == GetBytesPerPixel(bitmapConfig) && inSampleSize == 1;
 			}
 
 			// From Android 4.4 (KitKat) onward we can re-use if the byte size of the new bitmap
@@ -169,9 +169,21 @@ namespace FFImageLoading.Cache
 				inSampleSize = 1;
 			}
 
-			int newWidth = width/inSampleSize;
-			int newHeight = height/inSampleSize;
-			int byteCount = newWidth*newHeight*GetBytesPerPixel(bitmapConfig);
+			int newWidth = (int)Math.Ceiling(width/(float)inSampleSize);
+			int newHeight = (int)Math.Ceiling(height/(float)inSampleSize);
+
+			if (inSampleSize > 1)
+			{
+				// Android docs: the decoder uses a final value based on powers of 2, any other value will be rounded down to the nearest power of 2.
+				if (newWidth % 2 != 0)
+					newWidth += 1;
+
+				if (newHeight % 2 != 0)
+					newHeight += 1;	
+			}
+
+			int byteCount = newWidth * newHeight * GetBytesPerPixel(bitmapConfig);
+
 			return byteCount <= item.AllocationByteCount;
 		}
 
@@ -315,8 +327,8 @@ namespace FFImageLoading.Cache
 				return;
 			}
 
-			if (value.Bitmap == null) {
-				Log.Warn(TAG, "Attempt to add Drawable with null bitmap, refusing to cache");
+			if (value.Bitmap == null || value.Bitmap.Handle == IntPtr.Zero || value.Bitmap.IsRecycled) {
+				Log.Warn(TAG, "Attempt to add Drawable with null or recycled bitmap, refusing to cache");
 				return;
 			}
 

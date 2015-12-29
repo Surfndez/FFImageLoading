@@ -33,12 +33,12 @@
                     CacheDuration="30"
                     RetryCount="3"
                     RetryDelay="250"
+                    Height="500"
+                    Width="500"
                     DownsampleToViewSize="True"
+                    DownsampleMode="None"
                     Source="http://loremflickr.com/600/600/nature?filename=simple.jpg">
-            
-            <ff:FFImage.Transformations>
-                <fft:CircleTransformation />
-            </ff:FFImage.Transformations>            
+
         </ff:FFImage>
     </Grid>   
 </Page>

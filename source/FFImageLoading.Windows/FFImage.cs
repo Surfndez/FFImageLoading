@@ -29,7 +29,8 @@ namespace FFImageLoading
             };
             Content = internalImage;
 
-			Transformations = new List<FFImageLoading.Work.ITransformation>();
+			Transformations = new List<ITransformation>();
+            DownsampleMode = InterpolationMode.Default;
         }
 
         public string Source
@@ -48,7 +49,6 @@ namespace FFImageLoading
 
         private void SourcePropertyChanged(string source)
         {
-            System.Diagnostics.Debug.WriteLine("Source changed: {0}", source);
             if (Windows.ApplicationModel.DesignMode.DesignModeEnabled)
                 return;
 
@@ -70,7 +70,7 @@ namespace FFImageLoading
                 {
                     await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () => {
                         internalImage.Source = null;
-                    });
+					});
                 }
             }
             else if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.Url)
@@ -144,6 +144,9 @@ namespace FFImageLoading
                             ? DownsampleWidth.PointsToPixels() : (int)DownsampleWidth);
                     }
                 }
+
+                // Downsample mode
+                imageLoader.DownSampleMode(DownsampleMode);
 
                 // RetryCount
                 if (RetryCount > 0)
@@ -294,6 +297,28 @@ namespace FFImageLoading
             }
         }
 
+        //// <summary>
+        /// The downsample interpolation mode property.
+        /// </summary>
+        public static readonly DependencyProperty DownsampleModeProperty =
+            DependencyProperty.Register("DownsampleMode", typeof(InterpolationMode), typeof(FFImage), new PropertyMetadata(InterpolationMode.Default));
+
+        /// <summary>
+        /// Set interpolation (resizing) algorithm.
+        /// </summary>
+        /// <value>InterpolationMode enumeration. Bilinear by default.</value>
+        public InterpolationMode DownsampleMode
+        {
+            get
+            {
+                return (InterpolationMode)GetValue(DownsampleModeProperty);
+            }
+            set
+            {
+                SetValue(DownsampleModeProperty, value);
+            }
+        }
+
         public static readonly DependencyProperty DownsampleUseDipUnitsProperty = DependencyProperty.Register("DownsampleUseDipUnits",
             typeof(bool), typeof(FFImage), new PropertyMetadata(default(bool)));
 
@@ -433,6 +458,9 @@ namespace FFImageLoading
 
         private void TransformationsPropertyChanged(List<FFImageLoading.Work.ITransformation> transformations)
         {
+            if (Windows.ApplicationModel.DesignMode.DesignModeEnabled)
+                return;
+
             LoadImage();
         }
 

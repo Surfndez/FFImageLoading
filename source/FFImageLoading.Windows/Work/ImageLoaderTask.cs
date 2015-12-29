@@ -86,7 +86,6 @@ namespace FFImageLoading.Work
             if (_getNativeControl() == null)
                 return GenerateResult.InvalidTarget;
 
-            Exception trappedException = null;
             try
             {
                 // Post on main thread
@@ -105,14 +104,8 @@ namespace FFImageLoading.Work
             }
             catch (Exception ex2)
             {
-                trappedException = ex2; // All this stupid stuff is necessary to compile with c# 5, since we can't await in a catch block...
-            }
-
-            // All this stupid stuff is necessary to compile with c# 5, since we can't await in a catch block...
-            if (trappedException != null)
-            {
-                await LoadPlaceHolderAsync(Parameters.ErrorPlaceholderPath, Parameters.ErrorPlaceholderSource).ConfigureAwait(false);
-                throw trappedException;
+				await LoadPlaceHolderAsync(Parameters.ErrorPlaceholderPath, Parameters.ErrorPlaceholderSource).ConfigureAwait(false);
+				throw ex2;
             }
 
             return GenerateResult.Success;
@@ -133,9 +126,14 @@ namespace FFImageLoading.Work
                 if (IsCancelled)
                     return CacheResult.NotFound; // not sure what to return in that case
 
+                int pixelWidth = 0;
+                int pixelHeight = 0;
+
                 await MainThreadDispatcher.PostAsync(() =>
                 {
                     _doWithImage(value, true);
+                    pixelWidth = value.PixelWidth;
+                    pixelHeight = value.PixelHeight;
                 }).ConfigureAwait(false);
 
                 if (IsCancelled)
@@ -144,7 +142,7 @@ namespace FFImageLoading.Work
                 Completed = true;
 
                 if (Parameters.OnSuccess != null)
-                    Parameters.OnSuccess(new ImageSize(value.PixelWidth, value.PixelHeight), LoadingResult.MemoryCache);
+                    Parameters.OnSuccess(new ImageSize(pixelWidth, pixelHeight), LoadingResult.MemoryCache);
 
                 return CacheResult.Found; // found and loaded from cache
             }
@@ -188,18 +186,22 @@ namespace FFImageLoading.Work
 			if (_getNativeControl() == null)
 				return GenerateResult.InvalidTarget;
 
-			Exception trappedException = null;
 			try
 			{
-				// Post on main thread
-				await MainThreadDispatcher.PostAsync(() =>
+                int pixelWidth = 0;
+                int pixelHeight = 0;
+
+                // Post on main thread
+                await MainThreadDispatcher.PostAsync(() =>
 					{
 						if (CancellationToken.IsCancellationRequested)
 							return;
 
 						_doWithImage(image, false);
-						Completed = true;
-                        Parameters.OnSuccess(new ImageSize(image.PixelWidth, image.PixelHeight), imageWithResult.Result);
+                        pixelWidth = image.PixelWidth;
+                        pixelHeight = image.PixelHeight;
+                        Completed = true;
+                        Parameters.OnSuccess(new ImageSize(pixelWidth, pixelHeight), imageWithResult.Result);
                     }).ConfigureAwait(false);
 
 				if (!Completed)
@@ -207,14 +209,8 @@ namespace FFImageLoading.Work
 			}
 			catch (Exception ex2)
 			{
-				trappedException = ex2; // All this stupid stuff is necessary to compile with c# 5, since we can't await in a catch block...
-			}
-
-			// All this stupid stuff is necessary to compile with c# 5, since we can't await in a catch block...
-			if (trappedException != null)
-			{
 				await LoadPlaceHolderAsync(Parameters.ErrorPlaceholderPath, Parameters.ErrorPlaceholderSource).ConfigureAwait(false);
-				throw trappedException;
+				throw ex2;
 			}
 
 			return GenerateResult.Success;
@@ -293,7 +289,7 @@ namespace FFImageLoading.Work
                 if (Parameters.Transformations != null && Parameters.Transformations.Count > 0 
                 && (!isPlaceholder || (isPlaceholder && transformPlaceholdersEnabled)))
                 {
-                    BitmapHolder imageIn = await bytes.ToBitmapHolderAsync(Parameters.DownSampleSize);
+					BitmapHolder imageIn = await bytes.ToBitmapHolderAsync(Parameters.DownSampleSize, Parameters.DownSampleInterpolationMode).ConfigureAwait(false);
                     
                     foreach (var transformation in Parameters.Transformations.ToList() /* to prevent concurrency issues */)
                     {
@@ -319,11 +315,11 @@ namespace FFImageLoading.Work
                     await MainThreadDispatcher.PostAsync(async () =>
                     {
                         writableBitmap = await imageIn.ToBitmapImageAsync();
-                    });
+					}).ConfigureAwait(false);
                 }
                 else
                 {
-                    writableBitmap = await bytes.ToBitmapImageAsync(Parameters.DownSampleSize);
+					writableBitmap = await bytes.ToBitmapImageAsync(Parameters.DownSampleSize, Parameters.DownSampleInterpolationMode).ConfigureAwait(false);
                 }
 
                 return writableBitmap;
