@@ -57,6 +57,9 @@
     <Compile Include="CachedImage.cs" />
     <Compile Include="ImageSourceConverter.cs" />
     <Compile Include="CachedImageEvents.cs" />
+    <Compile Include="ICacheKeyFactory.cs" />
+    <Compile Include="Args\GetImageAsJpgArgs.cs" />
+    <Compile Include="Args\GetImageAsPngArgs.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\Portable\$(TargetFrameworkVersion)\Microsoft.Portable.CSharp.targets" />
   <Import Project="..\..\packages\Xamarin.Forms.1.4.4.6392\build\portable-win+net45+wp80+win81+wpa81+MonoAndroid10+MonoTouch10+Xamarin.iOS10\Xamarin.Forms.targets" Condition="Exists('..\..\packages\Xamarin.Forms.1.4.4.6392\build\portable-win+net45+wp80+win81+wpa81+MonoAndroid10+MonoTouch10+Xamarin.iOS10\Xamarin.Forms.targets')" />
@@ -72,12 +75,15 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\FFImageLoading.Common\FFImageLoading-contrib.csproj">
+    <ProjectReference Include="..\FFImageLoading.Common\FFImageLoading.csproj">
       <Project>{51CA3BE2-DF00-4F49-8054-E5C776992B61}</Project>
-      <Name>FFImageLoading-contrib</Name>
+      <Name>FFImageLoading</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Args\" />
   </ItemGroup>
 </Project>

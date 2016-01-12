@@ -23,7 +23,10 @@ namespace FFImageLoading.Work
 
 		static ImageLoaderTask()
 		{
-			_screenScale = UIScreen.MainScreen.Scale;
+			UIScreen.MainScreen.InvokeOnMainThread(() =>
+				{
+					_screenScale = UIScreen.MainScreen.Scale;
+				});
 		}
 
 		public ImageLoaderTask(IDownloadCache downloadCache, IMainThreadDispatcher mainThreadDispatcher, IMiniLogger miniLogger, TaskParameter parameters, Func<UIView> getNativeControl, Action<UIImage, bool> doWithImage, nfloat imageScale)
@@ -174,7 +177,7 @@ namespace FFImageLoading.Work
 		/// </summary>
 		/// <returns>An awaitable task.</returns>
 		/// <param name="stream">The stream to get data from.</param>
-		public override async Task<GenerateResult> LoadFromStreamAsync(Stream stream, bool isPlaceholder)
+		public override async Task<GenerateResult> LoadFromStreamAsync(Stream stream)
 		{
 			if (stream == null)
 				return GenerateResult.Failed;
@@ -186,7 +189,7 @@ namespace FFImageLoading.Work
 			UIImage image = null;
 			try
 			{
-				imageWithResult = await GetImageAsync("Stream", ImageSource.Stream, isPlaceholder, stream).ConfigureAwait(false);
+				imageWithResult = await GetImageAsync("Stream", ImageSource.Stream, false, stream).ConfigureAwait(false);
 				image = imageWithResult == null ? null : imageWithResult.Item;
 			}
 			catch (Exception ex)
@@ -199,6 +202,11 @@ namespace FFImageLoading.Work
 			{
 				await LoadPlaceHolderAsync(Parameters.ErrorPlaceholderPath, Parameters.ErrorPlaceholderSource).ConfigureAwait(false);
 				return GenerateResult.Failed;
+			}
+
+			if (CanUseMemoryCache())
+			{
+				ImageCache.Instance.Add(GetKey(), image);
 			}
 
 			if (CancellationToken.IsCancellationRequested)
@@ -319,7 +327,17 @@ namespace FFImageLoading.Work
 							|| (Parameters.DownSampleSize.Item2 > 0 && imageIn.Size.Height > Parameters.DownSampleSize.Item2)))
 					{
 						var tempImage = imageIn;
-						imageIn = tempImage.ResizeUIImage(Parameters.DownSampleSize.Item1, Parameters.DownSampleSize.Item2, Parameters.DownSampleInterpolationMode);
+
+						int downsampleWidth = Parameters.DownSampleSize.Item1;
+						int downsampleHeight = Parameters.DownSampleSize.Item2;
+
+						if (Parameters.DownSampleUseDipUnits)
+						{
+							downsampleWidth = downsampleWidth.PointsToPixels();
+							downsampleHeight = downsampleHeight.PointsToPixels();
+						}
+
+						imageIn = tempImage.ResizeUIImage(downsampleWidth, downsampleHeight, Parameters.DownSampleInterpolationMode);
 						tempImage.Dispose();
 					}
 

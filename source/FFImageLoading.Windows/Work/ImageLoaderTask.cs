@@ -159,7 +159,7 @@ namespace FFImageLoading.Work
             }
         }
 
-        public override async Task<GenerateResult> LoadFromStreamAsync(Stream stream, bool isPlaceholder)
+        public override async Task<GenerateResult> LoadFromStreamAsync(Stream stream)
         {
             if (stream == null)
                 return GenerateResult.Failed;
@@ -171,7 +171,7 @@ namespace FFImageLoading.Work
             WriteableBitmap image = null;
             try
             {
-                imageWithResult = await GetImageAsync("Stream", ImageSource.Stream, isPlaceholder, stream).ConfigureAwait(false);
+                imageWithResult = await GetImageAsync("Stream", ImageSource.Stream, false, stream).ConfigureAwait(false);
                 image = imageWithResult == null ? null : imageWithResult.Item;
             }
             catch (Exception ex)
@@ -185,6 +185,11 @@ namespace FFImageLoading.Work
                 await LoadPlaceHolderAsync(Parameters.ErrorPlaceholderPath, Parameters.ErrorPlaceholderSource).ConfigureAwait(false);
                 return GenerateResult.Failed;
             }
+
+			if (CanUseMemoryCache())
+			{
+				ImageCache.Instance.Add(GetKey(), image);
+			}
 
             if (CancellationToken.IsCancellationRequested)
                 return GenerateResult.Canceled;
@@ -295,7 +300,7 @@ namespace FFImageLoading.Work
                 if (Parameters.Transformations != null && Parameters.Transformations.Count > 0
                 && (!isPlaceholder || (isPlaceholder && transformPlaceholdersEnabled)))
                 {
-                    BitmapHolder imageIn = await bytes.ToBitmapHolderAsync(Parameters.DownSampleSize, Parameters.DownSampleInterpolationMode).ConfigureAwait(false);
+                    BitmapHolder imageIn = await bytes.ToBitmapHolderAsync(Parameters.DownSampleSize, Parameters.DownSampleUseDipUnits, Parameters.DownSampleInterpolationMode).ConfigureAwait(false);
 
                     foreach (var transformation in Parameters.Transformations.ToList() /* to prevent concurrency issues */)
                     {
@@ -327,7 +332,7 @@ namespace FFImageLoading.Work
                 }
                 else
                 {
-                    writableBitmap = await bytes.ToBitmapImageAsync(Parameters.DownSampleSize, Parameters.DownSampleInterpolationMode);
+                    writableBitmap = await bytes.ToBitmapImageAsync(Parameters.DownSampleSize, Parameters.DownSampleUseDipUnits, Parameters.DownSampleInterpolationMode);
                 }
 
                 bytes = null;

@@ -111,6 +111,8 @@ namespace FFImageLoading.Work
 
 		public Tuple<int, int> DownSampleSize { get; private set; }
 
+		public bool DownSampleUseDipUnits { get; private set; }
+
         public InterpolationMode DownSampleInterpolationMode { get; private set; }
 
         public ImageSource LoadingPlaceholderSource { get; private set; }
@@ -138,6 +140,8 @@ namespace FFImageLoading.Work
 		public bool? FadeAnimationEnabled { get; private set; }
 
         public bool? TransformPlaceholdersEnabled { get; private set; }
+
+		public string CustomCacheKey { get; private set; }
 
         public TaskParameter Transform(ITransformation transformation)
 		{
@@ -183,13 +187,31 @@ namespace FFImageLoading.Work
 
 		/// <summary>
 		/// Reduce memory usage by downsampling the image. Aspect ratio will be kept even if width/height values are incorrect.
+		/// Uses pixels units for width/height
 		/// </summary>
 		/// <returns>The TaskParameter instance for chaining the call.</returns>
 		/// <param name="width">Optional width parameter, if value is higher than zero it will try to downsample to this width while keeping aspect ratio.</param>
 		/// <param name="height">Optional height parameter, if value is higher than zero it will try to downsample to this height while keeping aspect ratio.</param>
 		public TaskParameter DownSample(int width = 0, int height = 0)
 		{
+			DownSampleUseDipUnits = false;
 			DownSampleSize = Tuple.Create(width, height);
+
+			return this;
+		}
+
+		/// <summary>
+		/// Reduce memory usage by downsampling the image. Aspect ratio will be kept even if width/height values are incorrect.
+		/// Uses device independent points units for width/height
+		/// </summary>
+		/// <returns>The TaskParameter instance for chaining the call.</returns>
+		/// <param name="width">Optional width parameter, if value is higher than zero it will try to downsample to this width while keeping aspect ratio.</param>
+		/// <param name="height">Optional height parameter, if value is higher than zero it will try to downsample to this height while keeping aspect ratio.</param>
+		public TaskParameter DownSampleInDip(int width = 0, int height = 0)
+		{
+			DownSampleUseDipUnits = true;
+			DownSampleSize = Tuple.Create(width, height);
+
 			return this;
 		}
 
@@ -249,6 +271,17 @@ namespace FFImageLoading.Work
 		{
 			RetryCount = retryCount;
 			RetryDelayInMs = millisecondDelay;
+			return this;
+		}
+
+		/// <summary>
+		/// Uses this cache key, in addition with the real key, to cache into memory/disk
+		/// </summary>
+		/// <returns>The TaskParameter instance for chaining the call.</returns>
+		/// <param name="customCacheKey">Custom cache key.</param>
+		public TaskParameter CacheKey(string customCacheKey)
+		{
+			CustomCacheKey = customCacheKey;
 			return this;
 		}
 

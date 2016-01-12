@@ -3,6 +3,7 @@ using Xamarin.Forms;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using FFImageLoading.Forms.Args;
 
 namespace FFImageLoading.Forms
 {
@@ -387,6 +388,12 @@ namespace FFImageLoading.Forms
 			}
 		}
 
+		/// <summary>
+		/// Gets or sets the cache custom key factory.
+		/// </summary>
+		/// <value>The cache key factory.</value>
+		public ICacheKeyFactory CacheKeyFactory { get; set; }
+
 		//
 		// Methods
 		//
@@ -457,15 +464,16 @@ namespace FFImageLoading.Forms
 			return new SizeRequest(new Size(num3, num4));
 		}
 			
-		internal event EventHandler Cancelled;
+		internal Action InternalCancel;
 
         /// <summary>
         /// Cancels image loading tasks
         /// </summary>
 		public void Cancel()
 		{
-			if (this.Cancelled != null) {
-				this.Cancelled (this, EventArgs.Empty);
+			if (InternalCancel != null) 
+			{
+				InternalCancel();
 			}
 		}
 
@@ -497,32 +505,73 @@ namespace FFImageLoading.Forms
             }
         }
 
-		internal Func<int, int, int, Task<byte[]>> InternalGetImageAsJPG; 
+		internal Func<GetImageAsJpgArgs, Task<byte[]>> InternalGetImageAsJPG; 
 
 		/// <summary>
 		/// Gets the image as JPG.
 		/// </summary>
 		/// <returns>The image as JPG.</returns>
+		[Obsolete("Use GetImageAsJpgAsync")]
 		public Task<byte[]> GetImageAsJPG(int quality, int desiredWidth = 0, int desiredHeight = 0)
 		{
 			if (InternalGetImageAsJPG == null)
 				return null;
 
-			return InternalGetImageAsJPG(quality, desiredWidth, desiredHeight);
+			return InternalGetImageAsJPG(new GetImageAsJpgArgs() {
+				Quality = quality,
+				DesiredWidth = desiredWidth,
+				DesiredHeight = desiredHeight,
+			});
 		}
 
-		internal Func<int, int, int, Task<byte[]>> InternalGetImageAsPNG; 
+		/// <summary>
+		/// Gets the image as JPG.
+		/// </summary>
+		/// <returns>The image as JPG.</returns>
+		public Task<byte[]> GetImageAsJpgAsync(int quality = 90, int desiredWidth = 0, int desiredHeight = 0)
+		{
+			if (InternalGetImageAsJPG == null)
+				return null;
+
+			return InternalGetImageAsJPG(new GetImageAsJpgArgs() {
+				Quality = quality,
+				DesiredWidth = desiredWidth,
+				DesiredHeight = desiredHeight,
+			});
+		}
+
+		internal Func<GetImageAsPngArgs, Task<byte[]>> InternalGetImageAsPNG;
 
 		/// <summary>
-		/// Gets the image as PNG.
+		/// Gets the image as PNG
+		/// <c>quality</c> parameter is ignored for PNG's.
 		/// </summary>
 		/// <returns>The image as PNG.</returns>
+		[Obsolete("Use GetImageAsPngAsync")]
 		public Task<byte[]> GetImageAsPNG(int quality, int desiredWidth = 0, int desiredHeight = 0)
 		{
 			if (InternalGetImageAsPNG == null)
 				return null;
 
-			return InternalGetImageAsPNG(quality, desiredWidth, desiredHeight);
+			return InternalGetImageAsPNG(new GetImageAsPngArgs() {
+				DesiredWidth = desiredWidth,
+				DesiredHeight = desiredHeight,
+			});
+		}
+
+		/// <summary>
+		/// Gets the image as PNG
+		/// </summary>
+		/// <returns>The image as PNG.</returns>
+		public Task<byte[]> GetImageAsPngAsync(int desiredWidth = 0, int desiredHeight = 0)
+		{
+			if (InternalGetImageAsPNG == null)
+				return null;
+
+			return InternalGetImageAsPNG(new GetImageAsPngArgs() {
+				DesiredWidth = desiredWidth,
+				DesiredHeight = desiredHeight,
+			});
 		}
 
 		/// <summary>

@@ -11,6 +11,8 @@ using FFImageLoading.Forms;
 using FFImageLoading.Forms.Touch;
 using FFImageLoading.Extensions;
 using System.Threading.Tasks;
+using FFImageLoading.Helpers;
+using FFImageLoading.Forms.Args;
 
 [assembly:ExportRenderer(typeof (CachedImage), typeof (CachedImageRenderer))]
 namespace FFImageLoading.Forms.Touch
@@ -30,7 +32,9 @@ namespace FFImageLoading.Forms.Touch
 		public static new void Init()
 		{
 			// needed because of this STUPID linker issue: https://bugzilla.xamarin.com/show_bug.cgi?id=31076
+			#pragma warning disable 0219
 			var dummy = new CachedImageRenderer();
+			#pragma warning restore 0219
 
 			CachedImage.InternalClearCache = new Action<FFImageLoading.Cache.CacheType>(ClearCache);
 			CachedImage.InternalInvalidateCache = new Action<string, FFImageLoading.Cache.CacheType>(InvalidateCache);
@@ -68,8 +72,6 @@ namespace FFImageLoading.Forms.Touch
 				UIImage image = Control.Image;
 				if (image != null)
 					image.Dispose();
-
-				image.Dispose();
 			}
 
 			_isDisposed = true;
@@ -85,19 +87,16 @@ namespace FFImageLoading.Forms.Touch
 					ClipsToBounds = true
 				});
 			}
-			if (e.OldElement != null)
-			{
-				e.OldElement.Cancelled -= Cancel;
-			}
+
 			if (e.NewElement != null)
 			{
 				SetAspect();
 				SetImage(e.OldElement);
 				SetOpacity();
 
-				e.NewElement.Cancelled += Cancel;
-				e.NewElement.InternalGetImageAsJPG = new Func<int, int, int, Task<byte[]>>(GetImageAsJPG);
-				e.NewElement.InternalGetImageAsPNG = new Func<int, int, int, Task<byte[]>>(GetImageAsPNG);
+				e.NewElement.InternalCancel = new Action(Cancel);
+				e.NewElement.InternalGetImageAsJPG = new Func<GetImageAsJpgArgs, Task<byte[]>>(GetImageAsJpgAsync);
+				e.NewElement.InternalGetImageAsPNG = new Func<GetImageAsPngArgs, Task<byte[]>>(GetImageAsPngAsync);
 			}
 			base.OnElementChanged(e);
 		}
@@ -147,7 +146,7 @@ namespace FFImageLoading.Forms.Touch
 
 			((IElementController)Element).SetValueFromRenderer(CachedImage.IsLoadingPropertyKey, true);
 
-			Cancel(this, EventArgs.Empty);
+			Cancel();
 			TaskParameter imageLoader = null;
 
 			var ffSource = ImageSourceBinding.GetImageSourceBinding(source);
@@ -182,6 +181,13 @@ namespace FFImageLoading.Forms.Touch
 
 			if (imageLoader != null)
 			{
+				// CustomKeyFactory
+				if (Element.CacheKeyFactory != null)
+				{
+					var bindingContext = Element.BindingContext;
+					imageLoader.CacheKey(Element.CacheKeyFactory.GetKey(source, bindingContext));
+				}
+
 				// LoadingPlaceholder
 				if (Element.LoadingPlaceholder != null)
 				{
@@ -286,7 +292,7 @@ namespace FFImageLoading.Forms.Touch
 			}
 		}
 
-		private void Cancel(object sender, EventArgs args)
+		private void Cancel()
 		{
 			if (_currentTask != null && !_currentTask.IsCancelled) 
 			{
@@ -294,44 +300,47 @@ namespace FFImageLoading.Forms.Touch
 			}
 		}
 			
-		private Task<byte[]> GetImageAsJPG(int quality, int desiredWidth = 0, int desiredHeight = 0)
+		private Task<byte[]> GetImageAsJpgAsync(GetImageAsJpgArgs args)
 		{
-			return GetImageAsByte(false, quality, desiredWidth, desiredHeight);
+			return GetImageAsByteAsync(false, args.Quality, args.DesiredWidth, args.DesiredHeight);
 		}
 
-		private Task<byte[]> GetImageAsPNG(int quality, int desiredWidth = 0, int desiredHeight = 0)
+		private Task<byte[]> GetImageAsPngAsync(GetImageAsPngArgs args)
 		{
-			return GetImageAsByte(true, quality, desiredWidth, desiredHeight);
+			return GetImageAsByteAsync(true, 90, args.DesiredWidth, args.DesiredHeight);
 		}
 
-		private Task<byte[]> GetImageAsByte(bool usePNG, int quality, int desiredWidth, int desiredHeight)
+		private async Task<byte[]> GetImageAsByteAsync(bool usePNG, int quality, int desiredWidth, int desiredHeight)
 		{
-			return Task.Run(() => {
-				if (Control == null || Control.Image == null)
-					return null;
+			UIImage image = null;
 
-				UIImage image = Control.Image;
-
-				if (desiredWidth != 0 || desiredHeight != 0)
-				{
-					image = image.ResizeUIImage((double)desiredWidth, (double)desiredHeight, InterpolationMode.Default);
-				}
-
-				NSData imageData = usePNG ? image.AsPNG() : image.AsJPEG((nfloat)quality / 100f);
-
-				if (imageData == null || imageData.Length == 0)
-					return null;
-
-				var encoded = imageData.ToArray();
-				imageData.Dispose();
-
-				if (desiredWidth != 0 || desiredHeight != 0)
-				{
-					image.Dispose();
-				}
-
-				return encoded;	
+			await MainThreadDispatcher.Instance.PostAsync(() => {
+				if (Control != null)
+					image = Control.Image;
 			});
+
+			if (image == null)
+				return null;
+
+			if (desiredWidth != 0 || desiredHeight != 0)
+			{
+				image = image.ResizeUIImage((double)desiredWidth, (double)desiredHeight, InterpolationMode.Default);
+			}
+
+			NSData imageData = usePNG ? image.AsPNG() : image.AsJPEG((nfloat)quality / 100f);
+
+			if (imageData == null || imageData.Length == 0)
+				return null;
+
+			var encoded = imageData.ToArray();
+			imageData.Dispose();
+
+			if (desiredWidth != 0 || desiredHeight != 0)
+			{
+				image.Dispose();
+			}
+
+			return encoded;	
 		}
 	}
 }

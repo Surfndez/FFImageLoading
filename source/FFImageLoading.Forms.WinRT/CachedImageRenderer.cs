@@ -1,6 +1,7 @@
 using FFImageLoading.Forms;
 using FFImageLoading.Work;
 using FFImageLoading.Extensions;
+using FFImageLoading.Forms.Args;
 using System;
 using System.ComponentModel;
 using Windows.Graphics.Imaging;
@@ -48,7 +49,11 @@ namespace FFImageLoading.Forms.WinRT
     /// <summary>
     /// CachedImage Implementation
     /// </summary>
+#if SILVERLIGHT
+    public class CachedImageRenderer : ViewRenderer<CachedImage, Image>, IDisposable
+#else
     public class CachedImageRenderer : ViewRenderer<CachedImage, Image>
+#endif
     {
         private IScheduledWork _currentTask;
 
@@ -118,15 +123,11 @@ namespace FFImageLoading.Forms.WinRT
                 SetNativeControl(control);
             }
 
-            if (e.OldElement != null)
-            {
-                e.OldElement.Cancelled -= Cancel;
-            }
             if (e.NewElement != null)
             {
-                e.NewElement.Cancelled += Cancel;
-                e.NewElement.InternalGetImageAsJPG = new Func<int, int, int, Task<byte[]>>(GetImageAsJPG);
-                e.NewElement.InternalGetImageAsPNG = new Func<int, int, int, Task<byte[]>>(GetImageAsPNG);
+				e.NewElement.InternalCancel = new Action(Cancel);
+				e.NewElement.InternalGetImageAsJPG = new Func<GetImageAsJpgArgs, Task<byte[]>>(GetImageAsJpgAsync);
+				e.NewElement.InternalGetImageAsPNG = new Func<GetImageAsPngArgs, Task<byte[]>>(GetImageAsPngAsync);
             }
 
             UpdateSource();
@@ -134,7 +135,13 @@ namespace FFImageLoading.Forms.WinRT
         }
 
 #if SILVERLIGHT
-// TODO unsubscribe event!!!
+        public void Dispose()
+        {
+            if (Control != null)
+            {
+                Control.ImageOpened -= OnImageOpened;
+            }
+        }
 #else
         protected override void Dispose(bool disposing)
         {
@@ -177,7 +184,7 @@ namespace FFImageLoading.Forms.WinRT
 
             Xamarin.Forms.ImageSource source = Element.Source;
 
-            Cancel(this, EventArgs.Empty);
+            Cancel();
             TaskParameter imageLoader = null;
 
             var ffSource = await ImageSourceBinding.GetImageSourceBinding(source).ConfigureAwait(false);
@@ -212,6 +219,13 @@ namespace FFImageLoading.Forms.WinRT
 
             if (imageLoader != null)
             {
+				// CustomKeyFactory
+				if (Element.CacheKeyFactory != null)
+				{
+					var bindingContext = Element.BindingContext;
+					imageLoader.CacheKey(Element.CacheKeyFactory.GetKey(source, bindingContext));
+				}
+
                 // LoadingPlaceholder
                 if (Element.LoadingPlaceholder != null)
                 {
@@ -335,7 +349,7 @@ namespace FFImageLoading.Forms.WinRT
             }
         }
 
-        private void Cancel(object sender, EventArgs args)
+        private void Cancel()
         {
             if (_currentTask != null && !_currentTask.IsCancelled)
             {
@@ -343,17 +357,17 @@ namespace FFImageLoading.Forms.WinRT
             }
         }
 
-        private Task<byte[]> GetImageAsJPG(int quality, int desiredWidth = 0, int desiredHeight = 0)
+		private Task<byte[]> GetImageAsJpgAsync(GetImageAsJpgArgs args)
         {
-            return GetImageAsByte(BitmapEncoder.JpegEncoderId, quality, desiredWidth, desiredHeight);
+			return GetImageAsByteAsync(BitmapEncoder.JpegEncoderId, args.Quality, args.DesiredWidth, args.DesiredHeight);
         }
 
-        private Task<byte[]> GetImageAsPNG(int quality, int desiredWidth = 0, int desiredHeight = 0)
+		private Task<byte[]> GetImageAsPngAsync(GetImageAsPngArgs args)
         {
-            return GetImageAsByte(BitmapEncoder.PngEncoderId, quality, desiredWidth, desiredHeight);
+			return GetImageAsByteAsync(BitmapEncoder.PngEncoderId, 90, args.DesiredWidth, args.DesiredHeight);
         }
 
-        private async Task<byte[]> GetImageAsByte(Guid format, int quality, int desiredWidth, int desiredHeight)
+        private async Task<byte[]> GetImageAsByteAsync(Guid format, int quality, int desiredWidth, int desiredHeight)
         {
             if (Control == null || Control.Source == null)
                 return null;
