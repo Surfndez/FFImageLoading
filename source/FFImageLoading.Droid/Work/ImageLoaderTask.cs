@@ -86,13 +86,16 @@ namespace FFImageLoading.Work
 			_imageWeakReference.TryGetTarget(out imageView);
 			if (imageView == null)
 				return false;
-			
-			var cacheResult = await TryLoadingFromCacheAsync(imageView).ConfigureAwait(false);
-			if (cacheResult == CacheResult.Found || cacheResult == CacheResult.ErrorOccured) // If image is loaded from cache there is nothing to do here anymore, if something weird happened with the cache... error callback has already been called, let's just leave
+
+			if (CanUseMemoryCache())
+			{
+				var cacheResult = await TryLoadingFromCacheAsync(imageView).ConfigureAwait(false);
+				if (cacheResult == CacheResult.Found || cacheResult == CacheResult.ErrorOccured) // If image is loaded from cache there is nothing to do here anymore, if something weird happened with the cache... error callback has already been called, let's just leave
 				return true; // stop processing if loaded from cache OR if loading from cached raised an exception
 
-			if (IsCancelled)
-				return true; // stop processing if cancelled
+				if (IsCancelled)
+					return true; // stop processing if cancelled
+			}
 
 			bool hasDrawable = await LoadPlaceHolderAsync(Parameters.LoadingPlaceholderPath, Parameters.LoadingPlaceholderSource, imageView, true).ConfigureAwait(false);
 			if (!hasDrawable)
@@ -457,7 +460,7 @@ namespace FFImageLoading.Work
 									}
 
 									// Transformation succeeded, so garbage the source
-									if (old != null && !old.IsRecycled && old != bitmap && old.Handle != bitmap.Handle)
+									if (old != null && old.Handle != IntPtr.Zero && !old.IsRecycled && old != bitmap && old.Handle != bitmap.Handle)
 									{
 										old.Recycle();
 										old.Dispose();
@@ -510,7 +513,8 @@ namespace FFImageLoading.Work
 
 			BitmapDrawable drawable = ImageCache.Instance.Get(GetKey(placeholderPath));
 
-			if (drawable != null && drawable.Bitmap != null && drawable.Bitmap.Handle != IntPtr.Zero && !drawable.Bitmap.IsRecycled)
+			if (drawable != null && drawable.Handle != IntPtr.Zero 
+				&& drawable.Bitmap != null && drawable.Bitmap.Handle != IntPtr.Zero && !drawable.Bitmap.IsRecycled)
 			{
 				// We should wrap drawable in an AsyncDrawable, nothing is deferred
 				drawable = new SelfDisposingAsyncDrawable(Context.Resources, drawable.Bitmap, this);
@@ -733,7 +737,7 @@ namespace FFImageLoading.Work
 				bitmapDrawable = ImageCache.Instance.GetBitmapDrawableFromReusableSet(options);
 				var bitmap = bitmapDrawable == null ? null : bitmapDrawable.Bitmap;
 
-				if (bitmap != null && bitmap.Handle != IntPtr.Zero)
+				if (bitmap != null && bitmap.Handle != IntPtr.Zero && !bitmap.IsRecycled)
 				{
 					options.InBitmap = bitmapDrawable.Bitmap;
 				}

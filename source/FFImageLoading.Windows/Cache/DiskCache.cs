@@ -41,10 +41,11 @@ namespace FFImageLoading.Cache
             Deleted = 'd'
         }
 
-        const string JournalFileName = "FFImageLoadingCache.journal";
+        const string JournalFileName = "FFImageLoading.journal";
         const string Magic = "MONOID";
 		const int BufferSize = 4096; // Xamarin large object heap threshold is 8K
         readonly Encoding encoding = Encoding.UTF8;
+        readonly Encoding encodingWrite = new UTF8Encoding(false);
 
         Task initTask = null;
         string version;
@@ -94,7 +95,7 @@ namespace FFImageLoading.Cache
         {
             try
             {
-				cacheFolder = await ApplicationData.Current.LocalFolder.CreateFolderAsync(cacheFolderName, CreationCollisionOption.OpenIfExists);
+				cacheFolder = await ApplicationData.Current.TemporaryFolder.CreateFolderAsync(cacheFolderName, CreationCollisionOption.OpenIfExists);
 				await InitializeWithJournal().ConfigureAwait(false);
             }
             catch
@@ -146,14 +147,16 @@ namespace FFImageLoading.Cache
                 {
                     string line = null;
 
-					using (var stream = await journalFile.OpenStreamForReadAsync().ConfigureAwait(false))
+                    using (var stream = await journalFile.OpenStreamForReadAsync().ConfigureAwait(false))
                     using (var reader = new StreamReader(stream, encoding))
                     {
-						while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null)
+                        stream.Seek(0, SeekOrigin.Begin);
+
+						while ((line = await reader.ReadLineAsync().ConfigureAwait(false)).Trim() != null)
                         {
                             try
                             {
-                                var op = ParseOp(line);
+                                JournalOp op = ParseOp(line);
                                 string key;
                                 DateTime origin;
                                 TimeSpan duration;
@@ -177,7 +180,6 @@ namespace FFImageLoading.Cache
                             }
                             catch
                             {
-                                break;
                             }
                         }
                     }
@@ -479,8 +481,9 @@ namespace FFImageLoading.Cache
             try
             {
 				using (var stream = await journalFile.OpenStreamForWriteAsync().ConfigureAwait(false))
-                using (var writer = new StreamWriter(stream, encoding))
+                using (var writer = new StreamWriter(stream, encodingWrite))
                 {
+                    stream.Seek(0, SeekOrigin.End);
 					await writer.WriteAsync((char)op).ConfigureAwait(false);
 					await writer.WriteAsync(' ').ConfigureAwait(false);
 					await writer.WriteAsync(key).ConfigureAwait(false);
@@ -500,9 +503,10 @@ namespace FFImageLoading.Cache
             try
             {
 				using (var stream = await journalFile.OpenStreamForWriteAsync().ConfigureAwait(false))
-                using (var writer = new StreamWriter(stream, encoding))
+                using (var writer = new StreamWriter(stream, encodingWrite))
                 {
-					await writer.WriteAsync((char)op).ConfigureAwait(false);
+                    stream.Seek(0, SeekOrigin.End);
+                    await writer.WriteAsync((char)op).ConfigureAwait(false);
 					await writer.WriteAsync(' ').ConfigureAwait(false);
 					await writer.WriteAsync(key).ConfigureAwait(false);
 					await writer.WriteAsync(' ').ConfigureAwait(false);
