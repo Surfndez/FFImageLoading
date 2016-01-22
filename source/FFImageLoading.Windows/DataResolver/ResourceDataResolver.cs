@@ -3,10 +3,11 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Storage;
+using System.IO;
 
 namespace FFImageLoading.DataResolver
 {
-    class ResourceDataResolver : IDataResolver
+    class ResourceDataResolver : IStreamResolver
     {
         private readonly ImageSource _source;
 
@@ -15,32 +16,22 @@ namespace FFImageLoading.DataResolver
             _source = source;
         }
 
-        public async Task<ResolverImageData> GetData(string identifier, CancellationToken token)
+        public async Task<WithLoadingResult<Stream>> GetStream(string identifier, CancellationToken token)
         {
-            byte[] bytes = null;
-
             StorageFile file = null;
 
             try
             {
                 string resPath = @"Assets\" + identifier.TrimStart('\\', '/');
-				file = await Windows.ApplicationModel.Package.Current.InstalledLocation.GetFileAsync(resPath);
+                var imgUri = new Uri("ms-appx:///" + resPath);
+                file = await StorageFile.GetFileFromApplicationUriAsync(imgUri);
+                // OLD WAY: file = await Windows.ApplicationModel.Package.Current.InstalledLocation.GetFileAsync(resPath);
             }
             catch (Exception)
             {
             }
 
-            if (file != null)
-            {
-				bytes = await FilePathDataResolver.ReadFile(file).ConfigureAwait(false);
-            }
-
-            return new ResolverImageData()
-            {
-                Result = LoadingResult.CompiledResource,
-                ResultIdentifier = identifier,
-                Data = bytes
-            };
+            return WithLoadingResult.Encapsulate(await file.OpenStreamForReadAsync(), LoadingResult.CompiledResource);
         }
 
         public void Dispose()
