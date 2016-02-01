@@ -69,6 +69,10 @@ namespace FFImageLoading.Forms.Droid
 			AutoPackage = false;
 		}
 
+		public CachedImageRenderer(IntPtr javaReference, JniHandleOwnership transfer) : this()
+		{
+		}
+
 		protected override void Dispose(bool disposing)
 		{
 			if (!_isDisposed)
@@ -90,6 +94,7 @@ namespace FFImageLoading.Forms.Droid
 
 			if (e.NewElement != null)
 			{
+				e.NewElement.InternalReloadImage = new Action(ReloadImage);
 				e.NewElement.InternalCancel = new Action(Cancel);
 				e.NewElement.InternalGetImageAsJPG = new Func<GetImageAsJpgArgs, Task<byte[]>>(GetImageAsJpgAsync);
 				e.NewElement.InternalGetImageAsPNG = new Func<GetImageAsPngArgs, Task<byte[]>>(GetImageAsPngAsync);
@@ -283,6 +288,11 @@ namespace FFImageLoading.Forms.Droid
 				((IVisualElementController)element).NativeSizeChanged();	
 				element.InvalidateViewMeasure();
 			}
+		}
+
+		private void ReloadImage()
+		{
+			UpdateBitmap(null);
 		}
 
 		private void Cancel()

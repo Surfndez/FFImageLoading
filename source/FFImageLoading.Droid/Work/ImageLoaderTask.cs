@@ -23,11 +23,10 @@ namespace FFImageLoading.Work
 {
 	public class ImageLoaderTask : ImageLoaderTaskBase
 	{
-		private const float FADE_TRANSITION_MILISECONDS = 400f;
 		private static object _decodingLock = new object();
 
 		private readonly WeakReference<ImageView> _imageWeakReference;
-		private WeakReference<Drawable> _loadingPlaceholderWeakReference;
+		private WeakReference<BitmapDrawable> _loadingPlaceholderWeakReference;
 
 		public ImageLoaderTask(IDownloadCache downloadCache, IMainThreadDispatcher mainThreadDispatcher, IMiniLogger miniLogger, TaskParameter parameters, ImageView imageView)
 			: base(mainThreadDispatcher, miniLogger, parameters, true)
@@ -114,19 +113,6 @@ namespace FFImageLoading.Work
 			return false;
 		}
 
-		/// <summary>
-		/// Gets or sets a value indicating whether a fade in transition is used to show the image.
-		/// </summary>
-		/// <value><c>true</c> if a fade in transition is used; otherwise, <c>false</c>.</value>
-		public bool UseFadeInBitmap 
-		{ 
-			get
-			{
-				return Parameters.FadeAnimationEnabled.HasValue ? 
-					Parameters.FadeAnimationEnabled.Value : ImageService.Config.FadeAnimationEnabled;
-			}
-		}
-
 		protected IDownloadCache DownloadCache { get; private set; }
 
 		protected Context Context
@@ -185,7 +171,7 @@ namespace FFImageLoading.Work
 						if (imageView.Handle == IntPtr.Zero)
 							return;
 						
-						SetImageDrawable(imageView, drawableWithResult.Item, UseFadeInBitmap);
+						SetImageDrawable(imageView, drawableWithResult.Item);
 						
 						Completed = true;
 						Parameters?.OnSuccess(new ImageSize(drawableWithResult.Item.IntrinsicWidth, drawableWithResult.Item.IntrinsicHeight), drawableWithResult.Result);
@@ -258,7 +244,7 @@ namespace FFImageLoading.Work
 						if (imageView.Handle == IntPtr.Zero)
 							return;
 						
-						SetImageDrawable(imageView, resultWithDrawable.Item, UseFadeInBitmap);
+						SetImageDrawable(imageView, resultWithDrawable.Item);
 						
 						Completed = true;
 						Parameters?.OnSuccess(new ImageSize(resultWithDrawable.Item.IntrinsicWidth, resultWithDrawable.Item.IntrinsicHeight), resultWithDrawable.Result);
@@ -282,43 +268,38 @@ namespace FFImageLoading.Work
 			if (IsCancelled)
 				return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
 
-			return await Task.Run<WithLoadingResult<SelfDisposingBitmapDrawable>>(async() =>
+			// First decode with inJustDecodeBounds=true to check dimensions
+			var options = new BitmapFactory.Options
+			{
+				InJustDecodeBounds = true
+			};
+
+			Stream stream = null;
+			WithLoadingResult<Stream> streamWithResult;
+			if (originalStream != null)
+			{
+				streamWithResult = new WithLoadingResult<Stream>(originalStream, LoadingResult.Stream);
+			}
+			else
+			{
+				streamWithResult = await GetStreamAsync(path, source).ConfigureAwait(false);
+			}
+
+			if (streamWithResult.HasError)
+			{
+				if (streamWithResult.Result == LoadingResult.NotFound)
 				{
-					if (IsCancelled)
-						return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
+					Logger.Error(string.Format("Not found: {0} from {1}", path, source.ToString()));
+				}
+				return new WithLoadingResult<SelfDisposingBitmapDrawable>(streamWithResult.Result);
+			}
 
-					// First decode with inJustDecodeBounds=true to check dimensions
-					var options = new BitmapFactory.Options
-					{
-						InJustDecodeBounds = true
-					};
+			stream = streamWithResult.Item;
 
-					Stream stream = null;
-					WithLoadingResult<Stream> streamWithResult;
-					if (originalStream != null)
-					{
-						streamWithResult = new WithLoadingResult<Stream>(originalStream, LoadingResult.Stream);
-					}
-					else
-					{
-						streamWithResult = await GetStreamAsync(path, source).ConfigureAwait(false);
-					}
-
-					if (streamWithResult.HasError)
-					{
-						if (streamWithResult.Result == LoadingResult.NotFound)
-						{
-							Logger.Error(string.Format("Not found: {0} from {1}", path, source.ToString()));
-						}
-						return new WithLoadingResult<SelfDisposingBitmapDrawable>(streamWithResult.Result);
-					}
-
-					stream = streamWithResult.Item;
-
-					try
-					{
-						try
-						{
+			try
+			{
+				try
+				{
 // NOTE: CURRENTLY NOT NEEDED							
 //							if (streamWithResult.Result == LoadingResult.Internet)
 //							{
@@ -327,88 +308,107 @@ namespace FFImageLoading.Work
 //							}
 //							else
 //							{
-								lock (_decodingLock)
-								{
-									BitmapFactory.DecodeStream(stream, null, options);
-								}
+						lock (_decodingLock)
+						{
+							BitmapFactory.DecodeStream(stream, null, options);
+						}
 //							}
 
-							if (!stream.CanSeek)
-							{
-								if (stream == originalStream)
-								{
-									// If we cannot seek the original stream then there's not much we can do
-									return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Failed);
-								}
-								else
-								{
-									// Assets stream can't be seeked to origin position
-									stream.Dispose();
-									streamWithResult = await GetStreamAsync(path, source).ConfigureAwait(false);
-									if (streamWithResult.HasError)
-									{
-										return new WithLoadingResult<SelfDisposingBitmapDrawable>(streamWithResult.Result);
-									}
-
-									stream = streamWithResult.Item;
-								}
-							}
-							else
-							{
-								stream.Seek(0, SeekOrigin.Begin);
-							}
-						}
-						catch (Exception ex)
+					if (!stream.CanSeek)
+					{
+						if (stream == originalStream)
 						{
-							Logger.Error("Something wrong happened while asynchronously retrieving image size from file: " + path, ex);
+							// If we cannot seek the original stream then there's not much we can do
 							return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Failed);
 						}
-
-						if (IsCancelled)
-							return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
-
-						options.InPurgeable = true;
-						options.InJustDecodeBounds = false;
-
-						if (!ImageService.Config.LoadWithTransparencyChannel || Parameters.LoadTransparencyChannel == null || !Parameters.LoadTransparencyChannel.Value)
+						else
 						{
-							// Same quality but no transparency channel. This allows to save 50% of memory: 1 pixel=2bytes instead of 4.
-							options.InPreferredConfig = Bitmap.Config.Rgb565;
-						}
-
-						try
-						{
-							if (Parameters.DownSampleSize != null && (Parameters.DownSampleSize.Item1 > 0 || Parameters.DownSampleSize.Item2 > 0))
+							// Assets stream can't be seeked to origin position
+							stream.Dispose();
+							streamWithResult = await GetStreamAsync(path, source).ConfigureAwait(false);
+							if (streamWithResult.HasError)
 							{
-								// Calculate inSampleSize
-
-								int downsampleWidth = Parameters.DownSampleSize.Item1;
-								int downsampleHeight = Parameters.DownSampleSize.Item2;
-
-								if (Parameters.DownSampleUseDipUnits)
-								{
-									downsampleWidth = downsampleWidth.DpToPixels();
-									downsampleHeight = downsampleHeight.DpToPixels();
-								}
-
-								options.InSampleSize = CalculateInSampleSize(options, downsampleWidth, downsampleHeight);
+								return new WithLoadingResult<SelfDisposingBitmapDrawable>(streamWithResult.Result);
 							}
 
-							// If we're running on Honeycomb or newer, try to use inBitmap
-							if (Utils.HasHoneycomb())
-								AddInBitmapOptions(options);
+							stream = streamWithResult.Item;
 						}
-						catch (Exception ex)
+					}
+					else
+					{
+						stream.Seek(0, SeekOrigin.Begin);
+					}
+				}
+				catch (Exception ex)
+				{
+					Logger.Error("Something wrong happened while asynchronously retrieving image size from file: " + path, ex);
+					return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Failed);
+				}
+
+				if (IsCancelled)
+					return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
+
+				options.InPurgeable = true;
+				options.InJustDecodeBounds = false;
+
+				if (!ImageService.Config.LoadWithTransparencyChannel || Parameters.LoadTransparencyChannel == null || !Parameters.LoadTransparencyChannel.Value)
+				{
+					// Same quality but no transparency channel. This allows to save 50% of memory: 1 pixel=2bytes instead of 4.
+					options.InPreferredConfig = Bitmap.Config.Rgb565;
+				}
+
+				// CHECK IF BITMAP IS EXIF ROTATED
+				int exifRotation = 0;
+				if (source == ImageSource.Filepath)
+				{
+					exifRotation = path.GetExifRotationDegrees();
+				}
+
+				try
+				{
+					if (Parameters.DownSampleSize != null && (Parameters.DownSampleSize.Item1 > 0 || Parameters.DownSampleSize.Item2 > 0))
+					{
+						// Calculate inSampleSize
+						int downsampleWidth = Parameters.DownSampleSize.Item1;
+						int downsampleHeight = Parameters.DownSampleSize.Item2;
+
+						// if image is rotated, swap width/height
+						if (exifRotation == 90 || exifRotation == 270) 
 						{
-							Logger.Error("Something wrong happened while adding decoding options to image: " + path, ex);
+							downsampleWidth = Parameters.DownSampleSize.Item2;
+							downsampleHeight = Parameters.DownSampleSize.Item1;
 						}
 
-						if (IsCancelled)
-							return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
-
-						Bitmap bitmap;
-						try
+						if (Parameters.DownSampleUseDipUnits)
 						{
+							downsampleWidth = downsampleWidth.DpToPixels();
+							downsampleHeight = downsampleHeight.DpToPixels();
+						}
+
+						if (Parameters.DownSampleUseDipUnits)
+						{
+							downsampleWidth = downsampleWidth.DpToPixels();
+							downsampleHeight = downsampleHeight.DpToPixels();
+						}
+
+						options.InSampleSize = CalculateInSampleSize(options, downsampleWidth, downsampleHeight);
+
+						// If we're running on Honeycomb or newer, try to use inBitmap
+						if (Utils.HasHoneycomb())
+							AddInBitmapOptions(options);	
+					}
+				}
+				catch (Exception ex)
+				{
+					Logger.Error("Something wrong happened while adding decoding options to image: " + path, ex);
+				}
+
+				if (IsCancelled)
+					return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
+
+				Bitmap bitmap;
+				try
+				{
 // NOTE: CURRENTLY NOT NEEDED
 //							if (streamWithResult.Result == LoadingResult.Internet)
 //							{
@@ -417,90 +417,113 @@ namespace FFImageLoading.Work
 //							}
 //							else
 //							{
-								lock (_decodingLock)
-								{
-									bitmap = BitmapFactory.DecodeStream(stream, null, options);
-								}
+						lock (_decodingLock)
+						{
+							bitmap = BitmapFactory.DecodeStream(stream, null, options);
+						}
 //							}
-						}
-						catch (Java.Lang.Throwable vme)
-						{
-							if (vme.Class == Java.Lang.Class.FromType(typeof(Java.Lang.OutOfMemoryError)))
-							{
-								ImageCache.Instance.Clear(); // Clear will also force a Garbage collection
-							}
-							return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Failed);
-						}
-						catch (Exception ex)
-						{
-							Logger.Error("Something wrong happened while asynchronously loading/decoding image: " + path, ex);
-							return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Failed);
-						}
+				}
+				catch (Java.Lang.Throwable vme)
+				{
+					if (vme.Class == Java.Lang.Class.FromType(typeof(Java.Lang.OutOfMemoryError)))
+					{
+						ImageCache.Instance.Clear(); // Clear will also force a Garbage collection
+					}
+					return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Failed);
+				}
+				catch (Exception ex)
+				{
+					Logger.Error("Something wrong happened while asynchronously loading/decoding image: " + path, ex);
+					return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Failed);
+				}
 
-						if (bitmap == null)
-							return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Failed);
+				if (bitmap == null)
+					return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Failed);
 
+				if (IsCancelled)
+					return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
+
+				// APPLY EXIF ORIENTATION IF NEEDED
+				if (exifRotation != 0)
+					bitmap = bitmap.ToRotatedBitmap(exifRotation);
+
+				bool transformPlaceholdersEnabled = Parameters.TransformPlaceholdersEnabled.HasValue ? 
+					Parameters.TransformPlaceholdersEnabled.Value : ImageService.Config.TransformPlaceholders;
+
+				if (Parameters.Transformations != null && Parameters.Transformations.Count > 0
+					&& (!isPlaceholder || (isPlaceholder && transformPlaceholdersEnabled)))
+				{
+					foreach (var transformation in Parameters.Transformations.ToList() /* to prevent concurrency issues */)
+					{
 						if (IsCancelled)
 							return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
 
-						bool transformPlaceholdersEnabled = Parameters.TransformPlaceholdersEnabled.HasValue ? 
-							Parameters.TransformPlaceholdersEnabled.Value : ImageService.Config.TransformPlaceholders;
-
-						if (Parameters.Transformations != null && Parameters.Transformations.Count > 0
-							&& (!isPlaceholder || (isPlaceholder && transformPlaceholdersEnabled)))
+						try
 						{
-							foreach (var transformation in Parameters.Transformations.ToList() /* to prevent concurrency issues */)
+							var old = bitmap;
+
+							// Applying a transformation is both CPU and memory intensive
+							lock (_decodingLock)
 							{
-								if (IsCancelled)
-									return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
-
-								try
-								{
-									var old = bitmap;
-
-									// Applying a transformation is both CPU and memory intensive
-									lock (_decodingLock)
-									{
-										var bitmapHolder = transformation.Transform(new BitmapHolder(bitmap));
-										bitmap = bitmapHolder.ToNative();
-									}
-
-									// Transformation succeeded, so garbage the source
-									if (old != null && old.Handle != IntPtr.Zero && !old.IsRecycled && old != bitmap && old.Handle != bitmap.Handle)
-									{
-										old.Recycle();
-										old.Dispose();
-									}
-
-								}
-								catch (Exception ex)
-								{
-									Logger.Error("Can't apply transformation " + transformation.Key + " to image " + path, ex);
-								}
-							}
-						}
-
-						if (isLoadingPlaceHolder)
-						{
-							return WithLoadingResult.Encapsulate<SelfDisposingBitmapDrawable>(new SelfDisposingAsyncDrawable(Context.Resources, bitmap, this), streamWithResult.Result);
-						}
-						else
-						{
-							Drawable placeholderDrawable = null;
-							if (_loadingPlaceholderWeakReference != null)
-							{
-								_loadingPlaceholderWeakReference.TryGetTarget(out placeholderDrawable);
+								var bitmapHolder = transformation.Transform(new BitmapHolder(bitmap));
+								bitmap = bitmapHolder.ToNative();
 							}
 
-							return WithLoadingResult.Encapsulate<SelfDisposingBitmapDrawable>(new FFBitmapDrawable(Context.Resources, bitmap, placeholderDrawable, FADE_TRANSITION_MILISECONDS, UseFadeInBitmap), streamWithResult.Result);
+							// Transformation succeeded, so garbage the source
+							if (old != null && old.Handle != IntPtr.Zero && !old.IsRecycled && old != bitmap && old.Handle != bitmap.Handle)
+							{
+								old.Recycle();
+								old.Dispose();
+							}
+
+						}
+						catch (Exception ex)
+						{
+							Logger.Error("Can't apply transformation " + transformation.Key + " to image " + path, ex);
 						}
 					}
-					finally
+				}
+
+				if (isLoadingPlaceHolder)
+				{
+					return WithLoadingResult.Encapsulate<SelfDisposingBitmapDrawable>(new SelfDisposingAsyncDrawable(Context.Resources, bitmap, this), streamWithResult.Result);
+				}
+				else
+				{
+					bool isFadeAnimationEnabled = Parameters.FadeAnimationEnabled.HasValue ?
+						Parameters.FadeAnimationEnabled.Value : ImageService.Config.FadeAnimationEnabled;
+
+					bool isFadeAnimationEnabledForCached = isFadeAnimationEnabled && (Parameters.FadeAnimationForCachedImages.HasValue ?
+						Parameters.FadeAnimationForCachedImages.Value : ImageService.Config.FadeAnimationForCachedImages);
+
+					int fadeDuration = Parameters.FadeAnimationDuration.HasValue ?
+						Parameters.FadeAnimationDuration.Value : ImageService.Config.FadeAnimationDuration;
+
+					bool isLocalOrCached = streamWithResult.Result.IsLocalOrCachedResult();
+
+					BitmapDrawable placeholderDrawable = null;
+					if (_loadingPlaceholderWeakReference != null)
 					{
-						if (stream != null)
-							stream.Dispose();
+						_loadingPlaceholderWeakReference.TryGetTarget(out placeholderDrawable);
 					}
-				}).ConfigureAwait(false);
+
+					if (isLocalOrCached)
+					{
+						return WithLoadingResult.Encapsulate<SelfDisposingBitmapDrawable>(
+							new FFBitmapDrawable(Context.Resources, bitmap, placeholderDrawable, 
+								fadeDuration, isFadeAnimationEnabled && isFadeAnimationEnabledForCached), streamWithResult.Result);
+					}
+
+					return WithLoadingResult.Encapsulate<SelfDisposingBitmapDrawable>(
+						new FFBitmapDrawable(Context.Resources, bitmap, placeholderDrawable, 
+							fadeDuration, isFadeAnimationEnabled), streamWithResult.Result);
+				}
+			}
+			finally
+			{
+				if (stream != null)
+					stream.Dispose();
+			}
 		}
 
 		/// <summary>
@@ -553,7 +576,7 @@ namespace FFImageLoading.Work
 			if (drawable == null)
 				return false;
 
-			_loadingPlaceholderWeakReference = new WeakReference<Drawable>(drawable);
+			_loadingPlaceholderWeakReference = new WeakReference<BitmapDrawable>(drawable);
 
 			if (IsCancelled)
 				return false;
@@ -566,7 +589,7 @@ namespace FFImageLoading.Work
 				if (imageView.Handle == IntPtr.Zero)
 					return;
 					
-				SetImageDrawable(imageView, drawable, false);
+				SetImageDrawable(imageView, drawable);
 					
 			}).ConfigureAwait(false);
 
@@ -776,7 +799,7 @@ namespace FFImageLoading.Work
 				: null;
 		}
 
-		private void SetImageDrawable(ImageView imageView, Drawable drawable, bool fadeIn)
+		private void SetImageDrawable(ImageView imageView, Drawable drawable)
 		{
 			if (Utils.HasJellyBean() && imageView.AdjustViewBounds)
 			{
