@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using FFImageLoading.Forms.Args;
 using System.Windows.Input;
+using System.Threading;
 
 namespace FFImageLoading.Forms
 {
@@ -490,8 +491,28 @@ namespace FFImageLoading.Forms
 				InternalCancel();
 			}
 		}
+            
+        internal static Func<string, CancellationToken, TimeSpan?, string, Task<bool>> InternalDownloadImageAndAddToDiskCache;
 
-		internal static Action<Cache.CacheType> InternalClearCache;
+        /// <summary>
+        /// Downloads the image and adds it to disk cache.
+        /// </summary>
+        /// <returns>Task.</returns>
+        /// <param name="imageUrl">Image URL.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="duration">Disk cache validity duration.</param>
+        /// <param name="customCacheKey">Custom cache key.</param>
+        public static async Task<bool> DownloadImageAndAddToDiskCacheAsync(string imageUrl, CancellationToken cancellationToken, TimeSpan? duration = null, string customCacheKey = null)
+        {
+            if (InternalDownloadImageAndAddToDiskCache != null)
+            {
+                return await InternalDownloadImageAndAddToDiskCache(imageUrl, cancellationToken, duration, customCacheKey);
+            }
+
+            return false;
+        }
+
+        internal static Action<bool> InternalSetPauseWork;
 
 		/// <summary>
 		/// Pauses image loading (enable or disable).
@@ -504,21 +525,32 @@ namespace FFImageLoading.Forms
 				InternalSetPauseWork(pauseWork);
 			}
 		}
-			
-		internal static Action<bool> InternalSetPauseWork;
+
+        internal static Func<Cache.CacheType, Task> InternalClearCache;
 
         /// <summary>
         /// Clears image cache
         /// </summary>
         /// <param name="cacheType">Cache type to invalidate</param>
+        [Obsolete("Use ClearCacheAsync")]
 		public static void ClearCache(Cache.CacheType cacheType)
         {
-			if (InternalClearCache != null)
+            ClearCacheAsync(cacheType);
+        }
+
+        /// <summary>
+        /// Clears image cache
+        /// </summary>
+        /// <param name="cacheType">Cache type to invalidate</param>
+        public static async Task ClearCacheAsync(Cache.CacheType cacheType)
+        {
+            if (InternalClearCache != null)
             {
-				InternalClearCache(cacheType);
+                await InternalClearCache(cacheType);
             }
         }
-		internal static Action<string, Cache.CacheType, bool> InternalInvalidateCache;
+
+        internal static Func<string, Cache.CacheType, bool, Task> InternalInvalidateCache;
 
         /// <summary>
         /// Invalidates cache for a specified key
@@ -527,11 +559,25 @@ namespace FFImageLoading.Forms
         /// <param name="cacheType">Cache type to invalidate</param>
 		/// <param name = "removeSimilar">If set to <c>true</c> removes all image cache variants 
 		/// (downsampling and transformations variants)</param>
+        [Obsolete("Use InvalidateCacheEntryAsync")]
 		public static void InvalidateCache(string key, Cache.CacheType cacheType, bool removeSimilar=false)
         {
-			if (InternalInvalidateCache != null)
+            
+            InvalidateCacheEntryAsync(key, cacheType, removeSimilar);
+        }
+
+        /// <summary>
+        /// Invalidates cache for a specified key
+        /// </summary>
+        /// <param name="key">Key to invalidate</param>
+        /// <param name="cacheType">Cache type to invalidate</param>
+        /// <param name = "removeSimilar">If set to <c>true</c> removes all image cache variants 
+        /// (downsampling and transformations variants)</param>
+        public static async Task InvalidateCacheEntryAsync(string key, Cache.CacheType cacheType, bool removeSimilar = false)
+        {
+            if (InternalInvalidateCache != null)
             {
-				InternalInvalidateCache(key, cacheType, removeSimilar);
+                await InternalInvalidateCache(key, cacheType, removeSimilar);
             }
         }
 

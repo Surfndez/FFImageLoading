@@ -13,6 +13,7 @@ using FFImageLoading.Extensions;
 using System.Threading.Tasks;
 using FFImageLoading.Helpers;
 using FFImageLoading.Forms.Args;
+using System.Threading;
 
 [assembly:ExportRenderer(typeof (CachedImage), typeof (CachedImageRenderer))]
 namespace FFImageLoading.Forms.Touch
@@ -36,37 +37,43 @@ namespace FFImageLoading.Forms.Touch
 			var dummy = new CachedImageRenderer();
 			#pragma warning restore 0219
 
-			CachedImage.InternalClearCache = new Action<FFImageLoading.Cache.CacheType>(ClearCache);
-			CachedImage.InternalInvalidateCache = new Action<string, FFImageLoading.Cache.CacheType, bool>(InvalidateCache);
-			CachedImage.InternalSetPauseWork = new Action<bool>(SetPauseWork);
-		}
+            CachedImage.InternalClearCache = new Func<FFImageLoading.Cache.CacheType, Task>(ClearCacheAsync);
+            CachedImage.InternalInvalidateCache = new Func<string, FFImageLoading.Cache.CacheType, bool, Task>(InvalidateCacheEntryAsync);
+            CachedImage.InternalSetPauseWork = new Action<bool>(SetPauseWork);
+            CachedImage.InternalDownloadImageAndAddToDiskCache = new Func<string, CancellationToken, TimeSpan?, string, Task<bool>>(DownloadImageAndAddToDiskCache);
+        }
 
-		private static void InvalidateCache(string key, Cache.CacheType cacheType, bool removeSimilar)
-		{
-			ImageService.Invalidate(key, cacheType, removeSimilar);
-		}
+        private static Task InvalidateCacheEntryAsync(string key, Cache.CacheType cacheType, bool removeSimilar)
+        {
+            return ImageService.InvalidateCacheEntryAsync(key, cacheType, removeSimilar);
+        }
 
-		private static void ClearCache(Cache.CacheType cacheType)
-		{
-			switch (cacheType)
-			{
-				case Cache.CacheType.Memory:
-					ImageService.InvalidateMemoryCache();
-					break;
-				case Cache.CacheType.Disk:
-					ImageService.InvalidateDiskCache();
-					break;
-				case Cache.CacheType.All:
-					ImageService.InvalidateMemoryCache();
-					ImageService.InvalidateDiskCache();
-					break;
-			}
-		}
+        private static async Task ClearCacheAsync(Cache.CacheType cacheType)
+        {
+            switch (cacheType)
+            {
+                case Cache.CacheType.Memory:
+                    ImageService.InvalidateMemoryCache();
+                    break;
+                case Cache.CacheType.Disk:
+                    await ImageService.InvalidateDiskCacheAsync().ConfigureAwait(false);
+                    break;
+                case Cache.CacheType.All:
+                    ImageService.InvalidateMemoryCache();
+                    await ImageService.InvalidateDiskCacheAsync().ConfigureAwait(false);
+                    break;
+            }
+        }
 
 		private static void SetPauseWork(bool pauseWork)
 		{
 			ImageService.SetPauseWork(pauseWork);
 		}
+
+        private static Task<bool> DownloadImageAndAddToDiskCache(string imageUrl, CancellationToken cancellationToken, TimeSpan? duration = null, string customCacheKey = null)
+        {
+            return ImageService.DownloadImageAndAddToDiskCacheAsync(imageUrl, cancellationToken, duration, customCacheKey);
+        }
 
         protected override void Dispose(bool disposing)
 		{

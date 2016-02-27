@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Storage.Streams;
 using System.IO;
+using System.Threading;
 
 #if WINDOWS_UWP
 using FFImageLoading.Forms.WinUWP;
@@ -62,17 +63,18 @@ namespace FFImageLoading.Forms.WinRT
         /// </summary>
         public static void Init()
         {
-            CachedImage.InternalClearCache = new Action<FFImageLoading.Cache.CacheType>(ClearCache);
-            CachedImage.InternalInvalidateCache = new Action<string, FFImageLoading.Cache.CacheType, bool>(InvalidateCache);
-			CachedImage.InternalSetPauseWork = new Action<bool>(SetPauseWork);
+            CachedImage.InternalClearCache = new Func<FFImageLoading.Cache.CacheType, Task>(ClearCacheAsync);
+            CachedImage.InternalInvalidateCache = new Func<string, FFImageLoading.Cache.CacheType, bool, Task>(InvalidateCacheEntryAsync);
+            CachedImage.InternalSetPauseWork = new Action<bool>(SetPauseWork);
+            CachedImage.InternalDownloadImageAndAddToDiskCache = new Func<string, CancellationToken, TimeSpan?, string, Task<bool>>(DownloadImageAndAddToDiskCache);
         }
 
-		private static void InvalidateCache(string key, Cache.CacheType cacheType, bool removeSimilar)
+        private static Task InvalidateCacheEntryAsync(string key, Cache.CacheType cacheType, bool removeSimilar)
         {
-            ImageService.Invalidate(key, cacheType, removeSimilar);
+            return ImageService.InvalidateCacheEntryAsync(key, cacheType, removeSimilar);
         }
 
-        private static void ClearCache(Cache.CacheType cacheType)
+        private static async Task ClearCacheAsync(Cache.CacheType cacheType)
         {
             switch (cacheType)
             {
@@ -80,11 +82,11 @@ namespace FFImageLoading.Forms.WinRT
                     ImageService.InvalidateMemoryCache();
                     break;
                 case Cache.CacheType.Disk:
-                    ImageService.InvalidateDiskCache();
+                    await ImageService.InvalidateDiskCacheAsync().ConfigureAwait(false);
                     break;
                 case Cache.CacheType.All:
                     ImageService.InvalidateMemoryCache();
-                    ImageService.InvalidateDiskCache();
+                    await ImageService.InvalidateDiskCacheAsync().ConfigureAwait(false);
                     break;
             }
         }
@@ -93,6 +95,11 @@ namespace FFImageLoading.Forms.WinRT
 		{
 			ImageService.SetPauseWork(pauseWork);
 		}
+
+        private static Task<bool> DownloadImageAndAddToDiskCache(string imageUrl, CancellationToken cancellationToken, TimeSpan? duration = null, string customCacheKey = null)
+        {
+            return ImageService.DownloadImageAndAddToDiskCacheAsync(imageUrl, cancellationToken, duration, customCacheKey);
+        }
 
         private bool measured;
 
@@ -462,7 +469,11 @@ namespace FFImageLoading.Forms.WinRT
         private async Task<byte[]> GetBytesFromBitmapAsync(WriteableBitmap bitmap)
         {
 #if SILVERLIGHT
-            return await Task.FromResult(bitmap.ToByteArray());
+            using (var ms = new MemoryStream())
+            {
+                bitmap.SaveJpeg(ms, bitmap.PixelWidth, bitmap.PixelHeight, 0, 100);
+                return ms.ToArray();
+            }
 #else
             byte[] tempPixels;
             using (var sourceStream = bitmap.PixelBuffer.AsStream())

@@ -274,10 +274,19 @@ namespace FFImageLoading
 		/// <summary>
 		/// Invalidates the disk cache.
 		/// </summary>
+		[Obsolete("Use InvalidateDiskCacheAsync")]
 		public static void InvalidateDiskCache()
 		{
+			InvalidateDiskCacheAsync();
+		}
+
+		/// <summary>
+		/// Invalidates the disk cache.
+		/// </summary>
+		public static Task InvalidateDiskCacheAsync()
+		{
 			InitializeIfNeeded();
-			Config.DiskCache.ClearAsync();
+			return Config.DiskCache.ClearAsync();
 		}
 
 		/// <summary>
@@ -286,7 +295,27 @@ namespace FFImageLoading
 		/// <param name="key">Concerns images with this key</param>
 		/// <param name="cacheType">Memory cache, Disk cache or both</param>
 		/// <param name="removeSimilar">If similar keys should be removed, ie: typically keys with extra transformations</param>
-		public static void Invalidate(string key, CacheType cacheType, bool removeSimilar=false)
+		[Obsolete("Use InvalidateCacheEntryAsync")]
+		public static async void Invalidate(string key, CacheType cacheType, bool removeSimilar=false)
+		{
+			try
+			{
+				await InvalidateCacheEntryAsync(key, cacheType, removeSimilar).ConfigureAwait(false);
+			}
+			catch (Exception ex)
+			{
+				Config.Logger.Error(string.Format("Could not invalidate cache entry {0}", key), ex);
+			}
+		}
+
+		/// <summary>
+		/// Invalidates the cache for given key.
+		/// </summary>
+		/// <returns>The async.</returns>
+		/// <param name="key">Concerns images with this key.</param>
+		/// <param name="cacheType">Memory cache, Disk cache or both</param>
+		/// <param name="removeSimilar">If similar keys should be removed, ie: typically keys with extra transformations</param>
+		public static async Task InvalidateCacheEntryAsync(string key, CacheType cacheType, bool removeSimilar=false)
 		{
 			InitializeIfNeeded();
 
@@ -306,8 +335,31 @@ namespace FFImageLoading
 			if (cacheType == CacheType.All || cacheType == CacheType.Disk)
 			{
 				string hash = _md5Helper.MD5(key);
-				Config.DiskCache.RemoveAsync(hash);
+				await Config.DiskCache.RemoveAsync(hash).ConfigureAwait(false);
 			}
+		}
+
+		/// <summary>
+		/// Downloads the image and adds it to disk cache.
+		/// Called only if the cache entry doesn't exist already.
+		/// </summary>
+		/// <returns>Returns <c>true</c> if added, <c>false</c> otherwise</returns>
+		/// <param name="imageUrl">Image URL.</param>
+		/// <param name="cancellationToken">Cancellation token.</param>
+		/// <param name="duration">Disk cache validity duration.</param>
+		/// <param name="customCacheKey">Custom cache key.</param>
+		public async static Task<bool> DownloadImageAndAddToDiskCacheAsync(string imageUrl, CancellationToken cancellationToken, TimeSpan? duration = null, string customCacheKey = null)
+		{
+			InitializeIfNeeded();
+
+			string fileName = string.IsNullOrWhiteSpace(customCacheKey) ? _md5Helper.MD5(imageUrl) : _md5Helper.MD5(customCacheKey);
+
+			if (await Config.DiskCache.ExistsAsync(fileName).ConfigureAwait(false))
+				return false;
+
+			string filePath = await Config.DiskCache.GetFilePathAsync(fileName).ConfigureAwait(false);
+			await Config.DownloadCache.DownloadBytesAndCacheAsync(imageUrl, fileName, filePath, cancellationToken, duration).ConfigureAwait(false);
+			return true;
 		}
 
 		private static void AddRequestToHistory(IImageLoaderTask task)

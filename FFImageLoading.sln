@@ -35,7 +35,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simple.WinPhoneSL.Sample", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FFImageLoading.Windows", "source\FFImageLoading.Windows\FFImageLoading.Windows.csproj", "{610543A5-D06F-4BCA-9443-E6ADDFF06C71}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FFImageLoading-contrib.WinSL", "source\FFImageLoading.WinSL\FFImageLoading-contrib.WinSL.csproj", "{3F6353CC-A79B-4C13-A73B-025B247CB806}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FFImageLoading.WinSL", "source\FFImageLoading.WinSL\FFImageLoading.WinSL.csproj", "{3F6353CC-A79B-4C13-A73B-025B247CB806}"
 	ProjectSection(ProjectDependencies) = postProject
 		{3A682234-5918-4F58-B02B-598A59C6A7BD} = {3A682234-5918-4F58-B02B-598A59C6A7BD}
 	EndProjectSection
@@ -76,6 +76,7 @@ Global
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
 		source\FFImageLoading.Shared\FFImageLoading.Shared.projitems*{e72ac4ed-03a8-465c-95a2-38b0544b37db}*SharedItemsImports = 13
 		source\FFImageLoading.Shared\FFImageLoading.Shared.projitems*{74bf9402-3e13-4003-8923-bc20a1294ce2}*SharedItemsImports = 4
+		source\FFImageLoading.Cross\FFImageLoading.Cross.projitems*{3c58b37d-edb7-4778-aa48-f3ad9a571059}*SharedItemsImports = 13
 		source\FFImageLoading.Shared\FFImageLoading.Shared.projitems*{1597f7d4-432c-4f26-b508-0f6faf0b9711}*SharedItemsImports = 4
 	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
