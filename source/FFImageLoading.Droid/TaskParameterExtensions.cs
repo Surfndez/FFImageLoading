@@ -19,7 +19,7 @@ namespace FFImageLoading
         public static IScheduledWork Into(this TaskParameter parameters, ImageViewAsync imageView)
         {
 			var task = CreateTask(parameters, imageView);
-            ImageService.LoadImage(task);
+            ImageService.Instance.LoadImage(task);
             return task;
         }
 
@@ -54,18 +54,18 @@ namespace FFImageLoading
 		/// </summary>
 		/// <param name="parameters">Image parameters.</param>
 		/// <param name="cacheType">Cache type.</param>
-		public static void Invalidate(this TaskParameter parameters, CacheType cacheType)
+		public static async Task InvalidateAsync(this TaskParameter parameters, CacheType cacheType)
 		{
 			using (var task = CreateTask(parameters, null))
 			{
 				var key = task.GetKey();
-				ImageService.Invalidate(key, cacheType);
+				await ImageService.Instance.InvalidateCacheEntryAsync(key, cacheType).ConfigureAwait(false);
 			}
 		}
 
 		private static ImageLoaderTask CreateTask(this TaskParameter parameters, ImageViewAsync imageView)
 		{
-			var task = new ImageLoaderTask(ImageService.Config.DownloadCache, new MainThreadDispatcher(), ImageService.Config.Logger, parameters, imageView);
+			var task = new ImageLoaderTask(ImageService.Instance.Config.DownloadCache, new MainThreadDispatcher(), ImageService.Instance.Config.Logger, parameters, imageView);
 			return task;
 		}
     }

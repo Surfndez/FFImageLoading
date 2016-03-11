@@ -69,7 +69,6 @@
     <Compile Include="Work\IBitmap.cs" />
     <Compile Include="Cache\CacheResult.cs" />
     <Compile Include="Work\GenerateResult.cs" />
-    <Compile Include="Work\ImageSize.cs" />
     <Compile Include="Work\LoadingResult.cs" />
     <Compile Include="Cache\CacheStream.cs" />
     <Compile Include="Work\WithLoadingResult.cs" />
@@ -82,6 +81,7 @@
     <Compile Include="Extensions\EnumExtensions.cs" />
     <Compile Include="Work\ImageInformation.cs" />
     <Compile Include="Work\LoadingPriority.cs" />
+    <Compile Include="Work\IImageService.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\Portable\$(TargetFrameworkVersion)\Microsoft.Portable.CSharp.targets" />
   <ItemGroup>

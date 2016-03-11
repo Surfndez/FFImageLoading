@@ -35,6 +35,8 @@ namespace FFImageLoading.Work
 	{
 		protected class PendingTask
 		{
+			public int Position { get; set; }
+
 			public IImageLoaderTask ImageLoadingTask { get; set; }
 
 			public Task FrameworkWrappingTask { get; set; }
@@ -50,6 +52,7 @@ namespace FFImageLoading.Work
 		private bool _exitTasksEarly;
 		private bool _pauseWork;
 		private bool _isRunning;
+		private int _currentPosition;
 
 		public WorkScheduler(IMiniLogger logger)
 		{
@@ -213,7 +216,8 @@ namespace FFImageLoading.Work
 		{
 			_logger.Debug(string.Format("Generating/retrieving image: {0}", task.GetKey()));
 
-			var currentPendingTask = new PendingTask() { ImageLoadingTask = task };
+			int position = Interlocked.Increment(ref _currentPosition);
+			var currentPendingTask = new PendingTask() { Position = position, ImageLoadingTask = task };
 			PendingTask alreadyRunningTaskForSameKey = null;
 			lock (_pauseWorkLock)
 			{
@@ -222,6 +226,8 @@ namespace FFImageLoading.Work
 					alreadyRunningTaskForSameKey = _pendingTasks.FirstOrDefault(t => t.ImageLoadingTask.GetKey() == task.GetKey() && (!t.ImageLoadingTask.IsCancelled));
 					if (alreadyRunningTaskForSameKey == null)
 						_pendingTasks.Add(currentPendingTask);
+					else
+						alreadyRunningTaskForSameKey.Position = position;
 				}
 			}
 
@@ -327,8 +333,10 @@ namespace FFImageLoading.Work
 			{
 				lock (_pendingTasksLock)
 				{
-					currentLotOfPendingTasks = _pendingTasks.Where(t => !t.ImageLoadingTask.IsCancelled && !t.ImageLoadingTask.Completed)
-					.OrderByDescending(t => t.ImageLoadingTask.Parameters.Priority)
+					currentLotOfPendingTasks = _pendingTasks
+						.Where(t => !t.ImageLoadingTask.IsCancelled && !t.ImageLoadingTask.Completed)
+						.OrderByDescending(t => t.ImageLoadingTask.Parameters.Priority)
+						.ThenByDescending(t => t.Position)
                     .Take(MaxParallelTasks)
                     .ToList();
 				}
@@ -343,13 +351,15 @@ namespace FFImageLoading.Work
 				}
 			}
 
-			var frameworkTasks = new List<Task>();
-			foreach (var pendingTask in currentLotOfPendingTasks)
+			if (currentLotOfPendingTasks.Count == 1)
 			{
-				frameworkTasks.Add(pendingTask.ImageLoadingTask.RunAsync());
+				await currentLotOfPendingTasks[0].ImageLoadingTask.RunAsync().ConfigureAwait(false);
 			}
-
-			await Task.WhenAll(frameworkTasks).ConfigureAwait(false);
+			else
+			{
+				var frameworkTasks = currentLotOfPendingTasks.Select(p => Task.Run(p.ImageLoadingTask.RunAsync));
+				await Task.WhenAll(frameworkTasks).ConfigureAwait(false);
+			}
 
 			lock (_runningLock)
 			{

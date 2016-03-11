@@ -251,7 +251,7 @@ namespace FFImageLoading.Work
 		}
 
 		/// <summary>
-		/// Indicates if the transparency channel should be loaded. By default this value comes from ImageService.Config.LoadWithTransparencyChannel.
+		/// Indicates if the transparency channel should be loaded. By default this value comes from ImageService.Instance.Config.LoadWithTransparencyChannel.
 		/// </summary>
 		/// <returns>The TaskParameter instance for chaining the call.</returns>
 		/// <param name="loadTransparencyChannel">If set to <c>true</c> force loading alpha channel otherwise force not loading it.</param>
@@ -323,27 +323,6 @@ namespace FFImageLoading.Work
 				throw new Exception("Given lambda should not be null.");
 
 			OnSuccess = (s, r) => action();
-			return this;
-		}
-
-		/// <summary>
-		/// If image loading succeded this callback is called
-		/// </summary>
-		/// <returns>The TaskParameter instance for chaining the call.</returns>
-		/// <param name="action">Action to invoke when loading succeded. Argument is the size of the image loaded.</param>
-		[Obsolete("use Success(Action<ImageInformation, LoadingResult> method instead")]
-		public TaskParameter Success(Action<ImageSize, LoadingResult> action)
-		{
-			if (action == null)
-				throw new Exception("Given lambda should not be null.");
-
-			OnSuccess = new Action<ImageInformation, LoadingResult>((imageInformation, loadingResult) => {
-
-				if (imageInformation != null)
-					action(new ImageSize(imageInformation.OriginalWidth, imageInformation.OriginalHeight), loadingResult);
-				else
-					action(new ImageSize(), loadingResult);
-			});
 			return this;
 		}
 

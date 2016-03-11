@@ -19,19 +19,24 @@ using System.Collections.Concurrent;
 
 namespace FFImageLoading
 {
-    public static class ImageService
+    public class ImageService: IImageService
     {
-        private static volatile bool _initialized;
-		private static object _initializeLock = new object();
-		private static readonly MD5Helper _md5Helper = new MD5Helper();
-		private static readonly ConcurrentDictionary<string, string> _fullKeyToKey = new ConcurrentDictionary<string, string>();
-		private static Configuration _config;
+        private volatile bool _initialized;
+		private object _initializeLock = new object();
+		private readonly MD5Helper _md5Helper = new MD5Helper();
+		private readonly ConcurrentDictionary<string, string> _fullKeyToKey = new ConcurrentDictionary<string, string>();
+		private Configuration _config;
+
+		private static Lazy<ImageService> LazyInstance = new Lazy<ImageService>(() => new ImageService());
+		public static ImageService Instance { get { return LazyInstance.Value; } }
+
+		private ImageService() { }
 
         /// <summary>
         /// Gets FFImageLoading configuration
         /// </summary>
         /// <value>The configuration used by FFImageLoading.</value>
-        public static Configuration Config
+        public Configuration Config
 		{
 			get
 			{
@@ -44,7 +49,11 @@ namespace FFImageLoading
 			}
 		}
 
-		public static void Initialize(Configuration configuration)
+		/// <summary>
+		/// Initializes FFImageLoading with given Configuration. It allows to configure and override most of it.
+		/// </summary>
+		/// <param name="configuration">Configuration.</param>
+		public void Initialize(Configuration configuration)
 		{
 			lock (_initializeLock)
 			{
@@ -81,46 +90,7 @@ namespace FFImageLoading
 			}
 		}
 
-        /// <summary>
-        /// Initialize ImageService default values. This can only be done once: during app start.
-        /// </summary>
-        /// <param name="maxCacheSize">Max cache size. If zero then 20% of the memory will be used.</param>
-		/// <param name="httpClient">.NET HttpClient to use. If null then a.NET HttpClient is instanciated.</param>
-        /// <param name="scheduler">Work scheduler used to organize/schedule loading tasks.</param>
-        /// <param name="logger">Basic logger. If null a very simple implementation that prints to console is used.</param>
-        /// <param name="diskCache">Disk cache. If null a default disk cache is instanciated that uses a journal mechanism.</param>
-        /// <param name="downloadCache">Download cache. If null a default download cache is instanciated, which relies on the DiskCache</param>
-		/// <param name="loadWithTransparencyChannel">Gets a value indicating whether images should be loaded with transparency channel. On Android we save 50% of the memory without transparency since we use 2 bytes per pixel instead of 4.</param>
-		/// <param name="fadeAnimationEnabled">Defines if fading should be performed while loading images.</param>
-        /// <param name="transformPlaceholders">Defines if transforms should be applied to placeholders.</param>
-		/// <param name="downsampleInterpolationMode">Defines default downsample interpolation mode.</param>
-		/// <param name="httpHeadersTimeout">Maximum time in seconds to wait to receive HTTP headers before the HTTP request is cancelled.</param>
-		/// <param name="httpReadTimeout">Maximum time in seconds to wait before the HTTP request is cancelled.</param>
-		[Obsolete("Use Initialize(Configuration configuration) overload")]
-		public static void Initialize(int? maxCacheSize = null, HttpClient httpClient = null, IWorkScheduler scheduler = null, IMiniLogger logger = null,
-			IDiskCache diskCache = null, IDownloadCache downloadCache = null, bool? loadWithTransparencyChannel = null, bool? fadeAnimationEnabled = null,
-			bool? transformPlaceholders = null, InterpolationMode? downsampleInterpolationMode = null, int httpHeadersTimeout = 15, int httpReadTimeout = 30
-		)
-        {
-			var cfg = new Configuration();
-
-			if (httpClient != null) cfg.HttpClient = httpClient;
-			if (scheduler != null) cfg.Scheduler = scheduler;
-			if (logger != null) cfg.Logger = logger;
-			if (diskCache != null) cfg.DiskCache = diskCache;
-			if (downloadCache != null) cfg.DownloadCache = downloadCache;
-			if (loadWithTransparencyChannel.HasValue) cfg.LoadWithTransparencyChannel = loadWithTransparencyChannel.Value;
-			if (fadeAnimationEnabled.HasValue) cfg.FadeAnimationEnabled = fadeAnimationEnabled.Value;
-			if (transformPlaceholders.HasValue) cfg.TransformPlaceholders = transformPlaceholders.Value;
-			if (downsampleInterpolationMode.HasValue) cfg.DownsampleInterpolationMode = downsampleInterpolationMode.Value;
-			cfg.HttpHeadersTimeout = httpHeadersTimeout;
-			cfg.HttpReadTimeout = httpReadTimeout;
-			if (maxCacheSize.HasValue) cfg.MaxCacheSize = maxCacheSize.Value;
-
-			Initialize(cfg);
-        }
-
-		private static void InitializeIfNeeded(Configuration userDefinedConfig = null)
+		private void InitializeIfNeeded(Configuration userDefinedConfig = null)
         {
 			if (_initialized)
 				return;
@@ -142,7 +112,7 @@ namespace FFImageLoading
 
 				var logger = userDefinedConfig.Logger ?? new MiniLogger();
 				var scheduler = userDefinedConfig.Scheduler ?? new WorkScheduler(logger);
-				var diskCache = userDefinedConfig.DiskCache ?? DiskCache.CreateCache(typeof(ImageService).Name);
+				var diskCache = userDefinedConfig.DiskCache ?? SimpleDiskCache.CreateCache("FFSimpleDiskCache");
 				var downloadCache = userDefinedConfig.DownloadCache ?? new DownloadCache(httpClient, diskCache);
 
 				userDefinedConfig.HttpClient = httpClient;
@@ -157,7 +127,7 @@ namespace FFImageLoading
 			}
         }
 
-        private static IWorkScheduler Scheduler
+        private IWorkScheduler Scheduler
         {
             get {
                 InitializeIfNeeded();
@@ -170,7 +140,7 @@ namespace FFImageLoading
         /// </summary>
         /// <returns>The new TaskParameter.</returns>
         /// <param name="filepath">Path to the file.</param>
-        public static TaskParameter LoadFile(string filepath)
+        public TaskParameter LoadFile(string filepath)
         {
             InitializeIfNeeded();
             return TaskParameter.FromFile(filepath);
@@ -182,7 +152,7 @@ namespace FFImageLoading
         /// <returns>The new TaskParameter.</returns>
         /// <param name="url">URL to the file</param>
         /// <param name="cacheDuration">How long the file will be cached on disk</param>
-        public static TaskParameter LoadUrl(string url, TimeSpan? cacheDuration = null)
+        public TaskParameter LoadUrl(string url, TimeSpan? cacheDuration = null)
         {
             InitializeIfNeeded();
             return TaskParameter.FromUrl(url, cacheDuration);
@@ -193,7 +163,7 @@ namespace FFImageLoading
 		/// </summary>
 		/// <returns>The new TaskParameter.</returns>
 		/// <param name="filepath">Path to the file.</param>
-		public static TaskParameter LoadFileFromApplicationBundle(string filepath)
+		public TaskParameter LoadFileFromApplicationBundle(string filepath)
 		{
 			InitializeIfNeeded();
 			return TaskParameter.FromApplicationBundle(filepath);
@@ -204,13 +174,18 @@ namespace FFImageLoading
 		/// </summary>
 		/// <returns>The new TaskParameter.</returns>
 		/// <param name="resourceName">Name of the resource in drawable folder without extension</param>
-		public static TaskParameter LoadCompiledResource(string resourceName)
+		public TaskParameter LoadCompiledResource(string resourceName)
 		{
 			InitializeIfNeeded();
 			return TaskParameter.FromCompiledResource(resourceName);
 		}
 
-		public static TaskParameter LoadStream(Func<CancellationToken, Task<Stream>> stream)
+		/// <summary>
+		/// Constructs a new TaskParameter to load an image from a Stream.
+		/// </summary>
+		/// <returns>The new TaskParameter.</returns>
+		/// <param name="resourceName">A function that allows a CancellationToken and returns the Stream to use. This function will be invoked by LoadStream().</param>
+		public TaskParameter LoadStream(Func<CancellationToken, Task<Stream>> stream)
 		{
 			InitializeIfNeeded();
 			return TaskParameter.FromStream(stream);
@@ -220,7 +195,7 @@ namespace FFImageLoading
         /// Gets a value indicating whether ImageService will exit tasks earlier
         /// </summary>
         /// <value><c>true</c> if it should exit tasks early; otherwise, <c>false</c>.</value>
-        public static bool ExitTasksEarly
+        public bool ExitTasksEarly
         {
             get
             {
@@ -232,7 +207,7 @@ namespace FFImageLoading
         /// Sets a value indicating whether ImageService will exit tasks earlier
         /// </summary>
         /// <param name="exitTasksEarly">If set to <c>true</c> exit tasks early.</param>
-        public static void SetExitTasksEarly(bool exitTasksEarly)
+        public void SetExitTasksEarly(bool exitTasksEarly)
         {
             Scheduler.SetExitTasksEarly(exitTasksEarly);
         }
@@ -241,7 +216,7 @@ namespace FFImageLoading
         /// Sets a value indicating if all loading work should be paused (silently canceled).
         /// </summary>
         /// <param name="pauseWork">If set to <c>true</c> pause/cancel work.</param>
-        public static void SetPauseWork(bool pauseWork)
+        public void SetPauseWork(bool pauseWork)
         {
             Scheduler.SetPauseWork(pauseWork);
         }
@@ -250,7 +225,7 @@ namespace FFImageLoading
         /// Cancel any loading work for the given ImageView
         /// </summary>
         /// <param name="task">Image loading task to cancel.</param>
-        public static void CancelWorkFor(IImageLoaderTask task)
+        public void CancelWorkFor(IImageLoaderTask task)
         {
             Scheduler.Cancel(task);
         }
@@ -259,7 +234,7 @@ namespace FFImageLoading
         /// Removes a pending image loading task from the work queue.
         /// </summary>
         /// <param name="task">Image loading task to remove.</param>
-        public static void RemovePendingTask(IImageLoaderTask task)
+        public void RemovePendingTask(IImageLoaderTask task)
         {
             Scheduler.RemovePendingTask(task);
         }
@@ -268,7 +243,7 @@ namespace FFImageLoading
         /// Queue an image loading task.
         /// </summary>
         /// <param name="task">Image loading task.</param>
-        public static void LoadImage(IImageLoaderTask task)
+        public void LoadImage(IImageLoaderTask task)
         {
             Scheduler.LoadImage(task);
 			AddRequestToHistory(task);
@@ -277,7 +252,7 @@ namespace FFImageLoading
 		/// <summary>
 		/// Invalidates the memory cache.
 		/// </summary>
-		public static void InvalidateMemoryCache()
+		public void InvalidateMemoryCache()
 		{
 			InitializeIfNeeded();
             ImageCache.Instance.Clear();
@@ -286,38 +261,10 @@ namespace FFImageLoading
 		/// <summary>
 		/// Invalidates the disk cache.
 		/// </summary>
-		[Obsolete("Use InvalidateDiskCacheAsync")]
-		public static void InvalidateDiskCache()
-		{
-			InvalidateDiskCacheAsync();
-		}
-
-		/// <summary>
-		/// Invalidates the disk cache.
-		/// </summary>
-		public static Task InvalidateDiskCacheAsync()
+		public Task InvalidateDiskCacheAsync()
 		{
 			InitializeIfNeeded();
 			return Config.DiskCache.ClearAsync();
-		}
-
-		/// <summary>
-		/// Invalidates the cache for given key.
-		/// </summary>
-		/// <param name="key">Concerns images with this key</param>
-		/// <param name="cacheType">Memory cache, Disk cache or both</param>
-		/// <param name="removeSimilar">If similar keys should be removed, ie: typically keys with extra transformations</param>
-		[Obsolete("Use InvalidateCacheEntryAsync")]
-		public static async void Invalidate(string key, CacheType cacheType, bool removeSimilar=false)
-		{
-			try
-			{
-				await InvalidateCacheEntryAsync(key, cacheType, removeSimilar).ConfigureAwait(false);
-			}
-			catch (Exception ex)
-			{
-				Config.Logger.Error(string.Format("Could not invalidate cache entry {0}", key), ex);
-			}
 		}
 
 		/// <summary>
@@ -327,7 +274,7 @@ namespace FFImageLoading
 		/// <param name="key">Concerns images with this key.</param>
 		/// <param name="cacheType">Memory cache, Disk cache or both</param>
 		/// <param name="removeSimilar">If similar keys should be removed, ie: typically keys with extra transformations</param>
-		public static async Task InvalidateCacheEntryAsync(string key, CacheType cacheType, bool removeSimilar=false)
+		public async Task InvalidateCacheEntryAsync(string key, CacheType cacheType, bool removeSimilar=false)
 		{
 			InitializeIfNeeded();
 
@@ -360,7 +307,7 @@ namespace FFImageLoading
 		/// <param name="cancellationToken">Cancellation token.</param>
 		/// <param name="duration">Disk cache validity duration.</param>
 		/// <param name="customCacheKey">Custom cache key.</param>
-		public async static Task<bool> DownloadImageAndAddToDiskCacheAsync(string imageUrl, CancellationToken cancellationToken, TimeSpan? duration = null, string customCacheKey = null)
+		public async Task<bool> DownloadImageAndAddToDiskCacheAsync(string imageUrl, CancellationToken cancellationToken, TimeSpan? duration = null, string customCacheKey = null)
 		{
 			InitializeIfNeeded();
 
@@ -374,7 +321,7 @@ namespace FFImageLoading
 			return true;
 		}
 
-		private static void AddRequestToHistory(IImageLoaderTask task)
+		private void AddRequestToHistory(IImageLoaderTask task)
 		{
 			AddRequestToHistory(task.Parameters.Path, task.GetKey());
 			AddRequestToHistory(task.Parameters.CustomCacheKey, task.GetKey());
@@ -382,7 +329,7 @@ namespace FFImageLoading
 			AddRequestToHistory(task.Parameters.ErrorPlaceholderPath, task.GetKey(task.Parameters.ErrorPlaceholderPath));
 		}
 
-		private static void AddRequestToHistory(string baseKey, string fullKey)
+		private void AddRequestToHistory(string baseKey, string fullKey)
 		{
 			if (string.IsNullOrWhiteSpace(baseKey) || string.IsNullOrWhiteSpace(fullKey))
 				return;
