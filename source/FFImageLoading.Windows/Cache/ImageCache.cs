@@ -8,6 +8,8 @@ using Windows.UI.Xaml.Media.Imaging;
 
 using System;
 using FFImageLoading.Work;
+using FFImageLoading.Helpers;
+using System.Linq;
 
 namespace FFImageLoading.Cache
 {
@@ -15,9 +17,11 @@ namespace FFImageLoading.Cache
     {
         private static IImageCache _instance;
         private readonly ConcurrentDictionary<string, Tuple<WeakReference<WriteableBitmap>, ImageInformation>> _reusableBitmaps;
+		private readonly IMiniLogger _logger;
 
-        private ImageCache(int maxCacheSize)
+        private ImageCache(int maxCacheSize, IMiniLogger logger)
         {
+			_logger = logger;
             _reusableBitmaps = new ConcurrentDictionary<string, Tuple<WeakReference<WriteableBitmap>, ImageInformation>>();
         }
 
@@ -25,7 +29,7 @@ namespace FFImageLoading.Cache
         {
             get
             {
-                return _instance ?? (_instance = new ImageCache(ImageService.Instance.Config.MaxCacheSize));
+                return _instance ?? (_instance = new ImageCache(ImageService.Instance.Config.MaxMemoryCacheSize, ImageService.Instance.Config.Logger));
             }
         }
 
@@ -35,6 +39,16 @@ namespace FFImageLoading.Cache
             _reusableBitmaps.TryAdd(key, new Tuple<WeakReference<WriteableBitmap>, ImageInformation>(weakRef, imageInformation));
         }
 
+		public ImageInformation GetInfo(string key)
+		{
+			Tuple<WeakReference<WriteableBitmap>, ImageInformation> cacheEntry;
+			if (_reusableBitmaps.TryGetValue (key, out cacheEntry))
+			{
+				return cacheEntry.Item2;
+			}
+
+			return null;
+		}
 
         public Tuple<WriteableBitmap, ImageInformation> Get(string key)
         {
@@ -77,8 +91,19 @@ namespace FFImageLoading.Cache
 
         public void Remove(string key)
         {
-            Tuple<WeakReference<WriteableBitmap>, ImageInformation> removed;
+			_logger.Debug (string.Format ("Called remove from memory cache for '{0}'", key));
+			Tuple<WeakReference<WriteableBitmap>, ImageInformation> removed;
             _reusableBitmaps.TryRemove(key, out removed);
         }
+
+		public void RemoveSimilar(string baseKey)
+		{
+            var keysToRemove = _reusableBitmaps.Where(v => v.Value?.Item2?.BaseKey == baseKey).Select(v => v.Value?.Item2?.CacheKey).ToList();
+
+			foreach (var key in keysToRemove)
+			{
+				Remove(key);
+			}
+		}
     }
 }

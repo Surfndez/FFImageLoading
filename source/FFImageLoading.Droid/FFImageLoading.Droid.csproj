@@ -10,7 +10,6 @@
     <MonoAndroidAssetsPrefix>Assets</MonoAndroidAssetsPrefix>
     <MonoAndroidResourcePrefix>Resources</MonoAndroidResourcePrefix>
     <AndroidResgenClass>Resource</AndroidResgenClass>
-    <AndroidResgenFile>Resources\Resource.designer.cs</AndroidResgenFile>
     <AndroidUseLatestPlatformSdk>False</AndroidUseLatestPlatformSdk>
     <AssemblyName>FFImageLoading.Platform</AssemblyName>
     <TargetFrameworkVersion>v4.4</TargetFrameworkVersion>
@@ -36,8 +35,7 @@
     <DocumentationFile>bin\Release\FFImageLoading.Platform.xml</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Windows Debug|AnyCPU'">
-    <OutputPath>bin\Windows Debug\</OutputPath>
-    <DocumentationFile>bin\Release\FFImageLoading.Droid.xml</DocumentationFile>
+    <OutputPath>bin\Debug\</OutputPath>
     <Optimize>true</Optimize>
     <PlatformTarget>anycpu</PlatformTarget>
     <GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
@@ -46,8 +44,8 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Windows Release|AnyCPU'">
-    <OutputPath>bin\Windows Release\</OutputPath>
-    <DocumentationFile>bin\Release\FFImageLoading.Droid.xml</DocumentationFile>
+    <OutputPath>bin\Release\</OutputPath>
+    <DocumentationFile>bin\Release\FFImageLoading.Platform.xml</DocumentationFile>
     <Optimize>true</Optimize>
     <PlatformTarget>anycpu</PlatformTarget>
     <GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
@@ -74,7 +72,6 @@
     <Compile Include="Helpers\Utils.cs" />
     <Compile Include="Work\ImageLoaderTask.cs" />
     <Compile Include="Extensions\ImageViewExtensions.cs" />
-    <Compile Include="Collections\ConcurrentSet.cs" />
     <Compile Include="Cache\IImageCache.cs" />
     <Compile Include="Views\ManagedImageView.cs" />
     <Compile Include="Views\ImageViewAsync.cs" />
@@ -87,7 +84,6 @@
     <Compile Include="Work\StreamResolver\UrlStreamResolver.cs" />
     <Compile Include="Work\StreamResolver\CompiledResourceStreamResolver.cs" />
     <Compile Include="Transformations\TransformationBase.cs" />
-    <Compile Include="Cache\ImageCacheHelper.cs" />
     <Compile Include="Extensions\UnitsExtensions.cs" />
     <Compile Include="Cache\ReuseBitmapDrawableCache.cs" />
     <Compile Include="Drawables\BitmapDrawableExtensions.cs" />
@@ -112,8 +108,8 @@
     <MonoDevelop>
       <Properties>
         <Policies>
-          <TextStylePolicy TabsToSpaces="False" EolMarker="Windows" inheritsSet="VisualStudio" inheritsScope="text/plain" scope="text/x-csharp" />
-          <CSharpFormattingPolicy inheritsSet="Mono" inheritsScope="text/x-csharp" scope="text/x-csharp" />
+          <TextStylePolicy inheritsSet="VisualStudio" inheritsScope="text/plain" scope="text/x-csharp" />
+          <CSharpFormattingPolicy IndentSwitchSection="True" NewLinesForBracesInProperties="True" NewLinesForBracesInAccessors="True" NewLinesForBracesInAnonymousMethods="True" NewLinesForBracesInControlBlocks="True" NewLinesForBracesInAnonymousTypes="True" NewLinesForBracesInObjectCollectionArrayInitializers="True" NewLinesForBracesInLambdaExpressionBody="True" NewLineForElse="True" NewLineForCatch="True" NewLineForFinally="True" NewLineForMembersInObjectInit="True" NewLineForMembersInAnonymousTypes="True" NewLineForClausesInQuery="True" SpacingAfterMethodDeclarationName="False" SpaceAfterMethodCallName="False" SpaceBeforeOpenSquareBracket="False" inheritsSet="Mono" inheritsScope="text/x-csharp" scope="text/x-csharp" />
         </Policies>
       </Properties>
     </MonoDevelop>
