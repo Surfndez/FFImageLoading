@@ -26,8 +26,8 @@ namespace FFImageLoading.Work
 			#pragma warning restore 0219
 		}
 
-		public ImageLoaderTask(IDownloadCache downloadCache, IMainThreadDispatcher mainThreadDispatcher, IMiniLogger miniLogger, TaskParameter parameters, nfloat imageScale, ITarget<UIImage, ImageLoaderTask> target)
-			: base(mainThreadDispatcher, miniLogger, parameters, true)
+		public ImageLoaderTask(IDownloadCache downloadCache, IMainThreadDispatcher mainThreadDispatcher, IMiniLogger miniLogger, TaskParameter parameters, nfloat imageScale, ITarget<UIImage, ImageLoaderTask> target, bool clearCacheOnOutOfMemory)
+			: base(mainThreadDispatcher, miniLogger, parameters, true, clearCacheOnOutOfMemory)
 		{
 			if (target == null)
 				throw new ArgumentNullException(nameof(target));
@@ -361,7 +361,7 @@ namespace FFImageLoading.Work
 					downsampleHeight = downsampleHeight.PointsToPixels();
 				}
 
-				imageIn = nsdata.ToImage(new CoreGraphics.CGSize(downsampleWidth, downsampleHeight), _imageScale, NSDataExtensions.RCTResizeMode.ScaleAspectFill, imageInformation);
+				imageIn = nsdata.ToImage(new CoreGraphics.CGSize(downsampleWidth, downsampleHeight), ScaleHelper.Scale, NSDataExtensions.RCTResizeMode.ScaleAspectFill, imageInformation);
 			}
 			else if (Parameters.DownSampleSize != null && imageIn != null)
 			{
