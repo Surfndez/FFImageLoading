@@ -18,6 +18,12 @@ namespace FFImageLoading.Work
         /// <param name="task">Image loading task to cancel</param>
         void Cancel(IImageLoaderTask task);
 
+        /// <summary>
+        /// Cancels tasks that match predicate.
+        /// </summary>
+        /// <param name="predicate">Predicate for finding relevant tasks to cancel.</param>
+        void Cancel(Func<IImageLoaderTask, bool> predicate);
+
         bool ExitTasksEarly { get; }
 
         void SetExitTasksEarly(bool exitTasksEarly);
@@ -95,6 +101,21 @@ namespace FFImageLoading.Work
             }
         }
 
+        /// <summary>
+        /// Cancels tasks that match predicate.
+        /// </summary>
+        /// <param name="predicate">Predicate for finding relevant tasks to cancel.</param>
+        public void Cancel(Func<IImageLoaderTask, bool> predicate)
+        {
+            lock (_pendingTasksLock)
+            {
+                foreach (var task in _pendingTasks.Where(p => predicate(p.ImageLoadingTask)).ToList()) // FMT: here we need a copy since cancelling will trigger them to be removed, hence collection is modified during enumeration
+                {
+                    task.ImageLoadingTask.Cancel();
+                }
+            }
+        }
+
         public bool ExitTasksEarly { get; private set; }
 
         public void SetExitTasksEarly(bool exitTasksEarly)
@@ -116,7 +137,7 @@ namespace FFImageLoading.Work
 
                 lock (_pendingTasksLock)
                 {
-                    foreach (var task in _pendingTasks)
+                    foreach (var task in _pendingTasks.ToList()) // FMT: here we need a copy since cancelling will trigger them to be removed, hence collection is modified during enumeration
                         task.ImageLoadingTask.Cancel();
 
                     _pendingTasks.Clear();
@@ -137,46 +158,55 @@ namespace FFImageLoading.Work
             }
         }
 
-        /// <summary>
-        /// Schedules the image loading. If image is found in cache then it returns it, otherwise it loads it.
-        /// </summary>
-        /// <param name="task">Image loading task.</param>
-        public async void LoadImage(IImageLoaderTask task)
-        {
-            Interlocked.Increment(ref _loadCount);
+		/// <summary>
+		/// Schedules the image loading. If image is found in cache then it returns it, otherwise it loads it.
+		/// </summary>
+		/// <param name="task">Image loading task.</param>
+		public async void LoadImage(IImageLoaderTask task)
+		{
+			Interlocked.Increment(ref _loadCount);
 
-            if (_verbosePerformanceLogging && (_loadCount % 10) == 0)
-            {
-                LogSchedulerStats();
-            }
+			if (_verbosePerformanceLogging && (_loadCount % 10) == 0)
+			{
+				LogSchedulerStats();
+			}
 
-            if (task == null)
-                return;
+			if (task == null)
+				return;
 
-            if (task.IsCancelled)
-            {
-                task.Parameters?.Dispose(); // this will ensure we don't keep a reference due to callbacks
-                return;
-            }
+			if (task.IsCancelled)
+			{
+				task.Parameters?.Dispose(); // this will ensure we don't keep a reference due to callbacks
+				return;
+			}
 
-            if (task.Parameters.DelayInMs != null && task.Parameters.DelayInMs > 0)
-            {
-                await Task.Delay(task.Parameters.DelayInMs.Value).ConfigureAwait(false);
-            }
+			if (task.Parameters.DelayInMs != null && task.Parameters.DelayInMs > 0)
+			{
+				await Task.Delay(task.Parameters.DelayInMs.Value).ConfigureAwait(false);
+			}
 
-            // If we have the image in memory then it's pointless to schedule the job: just display it straight away
-            if (task.CanUseMemoryCache())
-            {
-                var cacheResult = await task.TryLoadingFromCacheAsync().ConfigureAwait(false);
-                if (cacheResult == CacheResult.Found) // If image is loaded from cache there is nothing to do here anymore
-                {
-                    Interlocked.Increment(ref _statsTotalMemoryCacheHits);
-                    return;
-                }
+			// If we have the image in memory then it's pointless to schedule the job: just display it straight away
+			if (task.CanUseMemoryCache())
+			{
+				var cacheResult = await task.TryLoadingFromCacheAsync().ConfigureAwait(false);
+				if (cacheResult == CacheResult.Found) // If image is loaded from cache there is nothing to do here anymore
+				{
+					Interlocked.Increment(ref _statsTotalMemoryCacheHits);
+				}
 
-                if (cacheResult == CacheResult.ErrorOccured) // if something weird happened with the cache... error callback has already been called, let's just leave
-                    return;
-            }
+				if (cacheResult == CacheResult.Found || cacheResult == CacheResult.ErrorOccured) // if something weird happened with the cache... error callback has already been called, let's just leave
+				{
+					if (task.Parameters.OnFinish != null)
+						task.Parameters.OnFinish(task);
+					task.Dispose();
+					return;
+				}
+			}
+            else if (task?.Parameters?.Source != ImageSource.Stream && string.IsNullOrWhiteSpace(task?.Parameters?.Path))
+			{
+				_logger.Debug("ImageService: null path ignored");
+				return;
+			}
 
             _dispatch = _dispatch.ContinueWith(async t =>
             {
@@ -203,7 +233,7 @@ namespace FFImageLoading.Work
             {
                 lock (_pendingTasksLock)
                 {
-                    foreach (var pendingTask in _pendingTasks)
+                    foreach (var pendingTask in _pendingTasks.ToList()) // FMT: here we need a copy since cancelling will trigger them to be removed, hence collection is modified during enumeration
                     {
                         if (pendingTask.ImageLoadingTask != null && pendingTask.ImageLoadingTask.UsesSameNativeControl(task))
                             pendingTask.ImageLoadingTask.CancelIfNeeded();
@@ -360,7 +390,7 @@ namespace FFImageLoading.Work
 
                     foreach (var task in _pendingTasks
                                 .Where(t => !t.ImageLoadingTask.IsCancelled && !t.ImageLoadingTask.Completed)
-                                .OrderByDescending(t => t.ImageLoadingTask.Parameters.Priority)
+                                .OrderByDescending(t => t.ImageLoadingTask.Parameters.Priority ?? 0)
                                 .ThenBy(t => t.Position))
                     {
                         // We don't want to load, at the same time, images that have same key or same raw key at the same time

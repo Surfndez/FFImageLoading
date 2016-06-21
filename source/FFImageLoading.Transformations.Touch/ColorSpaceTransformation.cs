@@ -3,14 +3,20 @@ using UIKit;
 using CoreGraphics;
 using CoreImage;
 using System.Linq;
+using Foundation;
 
 namespace FFImageLoading.Transformations
 {
+	[Preserve(AllMembers = true)]
 	public class ColorSpaceTransformation: TransformationBase
 	{
 		CGColorSpace _colorSpace;
 		CIColorMatrix _colorMatrix;
 		float[][] _rgbawMatrix;
+
+		public ColorSpaceTransformation() : this(FFColorMatrix.InvertColorMatrix)
+		{
+		}
 
 		public ColorSpaceTransformation(float[][] rgbawMatrix)
 		{
@@ -27,6 +33,22 @@ namespace FFImageLoading.Transformations
 		{
 			_colorSpace = colorSpace;
 			_colorMatrix = null;
+		}
+
+		public float[][] RGBAWMatrix
+		{
+			get
+			{
+				return _rgbawMatrix;
+			}
+
+			set
+			{
+				if (value.Length != 5 || value.Any(v => v.Length != 5))
+					throw new ArgumentException("Wrong size of RGBAW color matrix");
+
+				_rgbawMatrix = value;
+			}
 		}
 
 		public override string Key
