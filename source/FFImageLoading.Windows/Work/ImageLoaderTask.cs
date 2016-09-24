@@ -20,20 +20,17 @@ namespace FFImageLoading.Work
 {
     public class ImageLoaderTask : ImageLoaderTaskBase
     {
+        private static readonly SemaphoreSlim _decodingLock = new SemaphoreSlim(1, 1);
         internal readonly ITarget<WriteableBitmap, ImageLoaderTask> _target;
 
         public ImageLoaderTask(IDownloadCache downloadCache, IMainThreadDispatcher mainThreadDispatcher, IMiniLogger miniLogger, TaskParameter parameters, ITarget<WriteableBitmap, ImageLoaderTask> target, bool clearCacheOnOutOfMemory)
-            : base(mainThreadDispatcher, miniLogger, parameters, false, clearCacheOnOutOfMemory)
+            : base(mainThreadDispatcher, miniLogger, parameters, downloadCache, false, clearCacheOnOutOfMemory)
         {
             if (target == null)
                 throw new ArgumentNullException(nameof(target));
 
             _target = target;
-
-            DownloadCache = downloadCache;
         }
-
-        protected IDownloadCache DownloadCache { get; private set; }
 
         public override bool UsesSameNativeControl(IImageLoaderTask task)
         {
@@ -353,28 +350,40 @@ namespace FFImageLoading.Work
                         return new WithLoadingResult<WriteableBitmap>(LoadingResult.Failed);
                     }
 
-                    foreach (var transformation in Parameters.Transformations.ToList() /* to prevent concurrency issues */)
+                    await _decodingLock.WaitAsync().ConfigureAwait(false); // Applying transformations is both CPU and memory intensive
+
+                    try
                     {
                         if (IsCancelled)
                             return new WithLoadingResult<WriteableBitmap>(LoadingResult.Canceled);
 
-                        try
+                        foreach (var transformation in Parameters.Transformations.ToList() /* to prevent concurrency issues */)
                         {
-                            var old = imageIn;
+                            if (IsCancelled)
+                                return new WithLoadingResult<WriteableBitmap>(LoadingResult.Canceled);
 
-                            IBitmap bitmapHolder = transformation.Transform(imageIn);
-                            imageIn = bitmapHolder.ToNative();
-
-                            if (old != null && old != imageIn && old.Pixels != imageIn.Pixels)
+                            try
                             {
-                                old.FreePixels();
-                                old = null;
+                                var old = imageIn;
+
+                                IBitmap bitmapHolder = transformation.Transform(imageIn);
+                                imageIn = bitmapHolder.ToNative();
+
+                                if (old != null && old != imageIn && old.Pixels != imageIn.Pixels)
+                                {
+                                    old.FreePixels();
+                                    old = null;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Error("Can't apply transformation " + transformation.Key + " to image " + path, ex);
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            Logger.Error("Can't apply transformation " + transformation.Key + " to image " + path, ex);
-                        }
+                    }
+                    finally
+                    {
+                        _decodingLock.Release();
                     }
 
                     writableBitmap = await imageIn.ToBitmapImageAsync();
@@ -406,13 +415,13 @@ namespace FFImageLoading.Work
         
         private async Task<bool> LoadPlaceHolderAsync(string placeholderPath, ImageSource source, bool isLoadingPlaceholder)
         {
-            if (string.IsNullOrWhiteSpace(placeholderPath))
+            if (Parameters.Preload || string.IsNullOrWhiteSpace(placeholderPath))
+            {
                 return false;
+            }
 
             var cacheEntry = ImageCache.Instance.Get(GetKey(placeholderPath));
             WriteableBitmap image = cacheEntry == null ? null : cacheEntry.Item1;
-
-            bool isLocalOrFromCache = true;
 
             if (image == null)
             {
@@ -420,13 +429,18 @@ namespace FFImageLoading.Work
                 {
                     var imageWithResult = await RetrieveImageAsync(placeholderPath, source, true).ConfigureAwait(false);
                     image = imageWithResult.Item;
-                    isLocalOrFromCache = imageWithResult.Result.IsLocalOrCachedResult();
+                    //isLocalOrFromCache = imageWithResult.Result.IsLocalOrCachedResult();
+                    MainThreadDispatcher.Post(() => _target.Set(this, image, true, isLoadingPlaceholder));
                 }
                 catch (Exception ex)
                 {
                     Logger.Error("An error occured while retrieving placeholder's drawable.", ex);
                     return false;
                 }
+            }
+            else
+            {
+                MainThreadDispatcher.Post(() => _target.Set(this, image, true, isLoadingPlaceholder));
             }
 
             if (image == null)
@@ -437,9 +451,6 @@ namespace FFImageLoading.Work
 
             if (IsCancelled)
                 return false;
-
-            // Post on main thread but don't wait for it
-            MainThreadDispatcher.Post(() => _target.Set(this, image, isLocalOrFromCache, isLoadingPlaceholder));
 
             return true;
         }

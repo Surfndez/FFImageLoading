@@ -6,6 +6,7 @@ using FFImageLoading.Views;
 using FFImageLoading.Helpers;
 using FFImageLoading.Cache;
 using Android.Graphics.Drawables;
+using System.Collections.Generic;
 
 
 namespace FFImageLoading
@@ -23,7 +24,7 @@ namespace FFImageLoading
 
             if (parameters.Source != ImageSource.Stream && string.IsNullOrWhiteSpace(parameters.Path))
             {
-                target.SetAsEmpty();
+                target.SetAsEmpty(null);
                 parameters.Dispose();
                 return null;
             }
@@ -34,7 +35,8 @@ namespace FFImageLoading
         }
 
         /// <summary>
-        /// Only use this method if you plan to handle exceptions in your code. Awaiting this method will give you this flexibility.
+        /// Loads the image into given imageView using defined parameters.
+        /// IMPORTANT: It throws image loading exceptions - you should handle them
         /// </summary>
         /// <returns>An awaitable Task.</returns>
         /// <param name="parameters">Parameters for loading the image.</param>
@@ -44,17 +46,74 @@ namespace FFImageLoading
             var userErrorCallback = parameters.OnError;
             var finishCallback = parameters.OnFinish;
             var tcs = new TaskCompletionSource<IScheduledWork>();
+            List<Exception> exceptions = null;
 
             parameters
-                .Error(ex => {
+                .Error(ex =>
+                {
+                    if (exceptions == null)
+                        exceptions = new List<Exception>();
+                    
+                    exceptions.Add(ex);
                     userErrorCallback(ex);
-                    tcs.SetException(ex);
                 })
-                .Finish(scheduledWork => {
+                .Finish(scheduledWork =>
+                {
                     finishCallback(scheduledWork);
-                    tcs.TrySetResult(scheduledWork); // we should use TrySetResult since SetException could have been called earlier. It is not allowed to set result after SetException
+
+                    if (exceptions != null)
+                        tcs.TrySetException(exceptions);
+                    else
+                        tcs.TrySetResult(scheduledWork);
                 })
                 .Into(imageView);
+
+            return tcs.Task;
+        }
+
+        /// <summary>
+        /// Loads and gets BitmapDrawable using defined parameters.
+        /// IMPORTANT: you should call SetNoLongerDisplayed method if drawable is no longer displayed
+        /// IMPORTANT: It throws image loading exceptions - you should handle them
+        /// </summary>
+        /// <returns>The bitmap drawable async.</returns>
+        /// <param name="parameters">Parameters.</param>
+        public static Task<BitmapDrawable> AsBitmapDrawableAsync(this TaskParameter parameters)
+        {
+            var target = new BitmapTarget();
+            var userErrorCallback = parameters.OnError;
+            var finishCallback = parameters.OnFinish;
+            var tcs = new TaskCompletionSource<BitmapDrawable>();
+            List<Exception> exceptions = null;
+
+            parameters
+                .Error(ex =>
+                {
+                    if (exceptions == null)
+                        exceptions = new List<Exception>();
+
+                    exceptions.Add(ex);
+                    userErrorCallback(ex);
+                })
+                .Finish(scheduledWork =>
+                {
+                    finishCallback(scheduledWork);
+
+                    if (exceptions != null)
+                        tcs.TrySetException(exceptions);
+                    else
+                        tcs.TrySetResult(target.BitmapDrawable);
+                });
+
+            if (parameters.Source != ImageSource.Stream && string.IsNullOrWhiteSpace(parameters.Path))
+            {
+                target.SetAsEmpty(null);
+                parameters.Dispose();
+                return null;
+            }
+
+            var task = CreateTask(parameters, target);
+            ImageService.Instance.LoadImage(task);
 
             return tcs.Task;
         }
@@ -75,7 +134,7 @@ namespace FFImageLoading
 		}
 
 		/// <summary>
-		/// Preload the image request into memory cache/disk cache for future use.
+		/// Preloads the image request into memory cache/disk cache for future use.
 		/// </summary>
 		/// <param name="parameters">Image parameters.</param>
 		public static void Preload(this TaskParameter parameters)
@@ -90,6 +149,79 @@ namespace FFImageLoading
             var task = CreateTask(parameters, target);
 			ImageService.Instance.LoadImage(task);
 		}
+
+        /// <summary>
+        /// Preloads the image request into memory cache/disk cache for future use.
+        /// IMPORTANT: It throws image loading exceptions - you should handle them
+        /// </summary>
+        /// <param name="parameters">Image parameters.</param>
+        public static Task PreloadAsync(this TaskParameter parameters)
+        {
+            var tcs = new TaskCompletionSource<IScheduledWork>();
+
+            if (parameters.Priority == null)
+            {
+                parameters.WithPriority(LoadingPriority.Low);
+            }
+
+            var userErrorCallback = parameters.OnError;
+            var finishCallback = parameters.OnFinish;
+            List<Exception> exceptions = null;
+
+            parameters.Preload = true;
+
+            parameters
+            .Error(ex =>
+            {
+                if (exceptions == null)
+                    exceptions = new List<Exception>();
+
+                exceptions.Add(ex);
+                userErrorCallback(ex);
+            })
+            .Finish(scheduledWork =>
+            {
+                finishCallback(scheduledWork);
+
+                if (exceptions != null)
+                    tcs.TrySetException(exceptions);
+                else
+                    tcs.TrySetResult(scheduledWork);
+            });
+
+            var target = new Target<BitmapDrawable, ImageLoaderTask>();
+            var task = CreateTask(parameters, target);
+            ImageService.Instance.LoadImage(task);
+
+            return tcs.Task;
+        }
+
+        /// <summary>
+        /// Downloads the image request into disk cache for future use if not already exists.
+        /// Only Url Source supported.
+        /// </summary>
+        /// <param name="parameters">Image parameters.</param>
+        public static void DownloadOnly(this TaskParameter parameters)
+        {
+            if (parameters.Source == ImageSource.Url)
+            {
+                Preload(parameters.WithCache(CacheType.Disk));
+            }
+        }
+
+        /// <summary>
+        /// Downloads the image request into disk cache for future use if not already exists.
+        /// Only Url Source supported.
+        /// IMPORTANT: It throws image loading exceptions - you should handle them
+        /// </summary>
+        /// <param name="parameters">Image parameters.</param>
+        public static async Task DownloadOnlyAsync(this TaskParameter parameters)
+        {
+            if (parameters.Source == ImageSource.Url)
+            {
+                await PreloadAsync(parameters.WithCache(CacheType.Disk));
+            }
+        }
 
 		private static ImageLoaderTask CreateTask(this TaskParameter parameters, Target<BitmapDrawable, ImageLoaderTask> target)
 		{

@@ -86,7 +86,6 @@
     <Compile Include="Transformations\TransformationBase.cs" />
     <Compile Include="Extensions\UnitsExtensions.cs" />
     <Compile Include="Cache\ReuseBitmapDrawableCache.cs" />
-    <Compile Include="Drawables\BitmapDrawableExtensions.cs" />
     <Compile Include="Drawables\SelfDisposingBitmapDrawable.cs" />
     <Compile Include="Collections\StrongLruCache.cs" />
     <Compile Include="Collections\ByteBoundStrongLruCache.cs" />
@@ -97,14 +96,16 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Helpers\MainThreadDispatcher.cs" />
     <Compile Include="Extensions\ExifExtensions.cs" />
-    <Compile Include="Work\ImageViewTarget.cs" />
     <Compile Include="Helpers\PlatformPerformance.cs" />
     <Compile Include="Extensions\ColorExtensions.cs" />
+    <Compile Include="Targets\ImageViewTarget.cs" />
+    <Compile Include="Targets\BitmapTarget.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Config\" />
     <Folder Include="Drawables\" />
     <Folder Include="Properties\" />
+    <Folder Include="Targets\" />
   </ItemGroup>
   <ProjectExtensions>
     <MonoDevelop>

@@ -4,6 +4,7 @@ using Android.Widget;
 using System.Threading.Tasks;
 using FFImageLoading.Extensions;
 using Android.Graphics;
+using FFImageLoading.Drawables;
 
 namespace FFImageLoading.Work
 {
@@ -26,20 +27,18 @@ namespace FFImageLoading.Work
 
 		public override bool IsTaskValid(ImageLoaderTask task)
 		{
-			var control = Control;
-			if (control == null)
-				return false;
-
-			var controlTask = control.GetImageLoaderTask();
-			return controlTask == task;
+            var controlTask = Control?.GetImageLoaderTask();
+            return IsValid && (controlTask == null || controlTask == task);
 		}
 
-        public override void SetAsEmpty()
+        public override void SetAsEmpty(ImageLoaderTask task)
         {
             var control = Control;
             if (control == null)
                 return;
 
+            //var drawable = new AsyncDrawable(control.Context.Resources, null, task);
+            //control.SetImageDrawable(drawable);
             control.SetImageResource(global::Android.Resource.Color.Transparent);
         }
 
@@ -49,9 +48,9 @@ namespace FFImageLoading.Work
 				return;
 			
 			var control = Control;
-			if (control == null)
+			if (control == null || control.Drawable == image)
 				return;
-
+            
 			control.SetImageDrawable(image);
 		}
 

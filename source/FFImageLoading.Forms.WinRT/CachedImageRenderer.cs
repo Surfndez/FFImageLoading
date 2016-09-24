@@ -59,6 +59,7 @@ namespace FFImageLoading.Forms.WinRT
 #endif
     {
         private IScheduledWork _currentTask;
+		private bool _isDisposed = false;
 
         /// <summary>
         ///   Used for registration with dependency service
@@ -96,10 +97,13 @@ namespace FFImageLoading.Forms.WinRT
             {
                 Image control = new Image()
                 {
-                    Stretch = GetStretch(Xamarin.Forms.Aspect.AspectFill)
+                    Stretch = GetStretch(Xamarin.Forms.Aspect.AspectFill),
                 };
                 control.ImageOpened += OnImageOpened;
                 SetNativeControl(control);
+
+				Control.HorizontalAlignment = HorizontalAlignment.Center;
+				Control.VerticalAlignment = VerticalAlignment.Center;
             }
 
             if (e.NewElement != null)
@@ -110,6 +114,11 @@ namespace FFImageLoading.Forms.WinRT
 				e.NewElement.InternalGetImageAsPNG = new Func<GetImageAsPngArgs, Task<byte[]>>(GetImageAsPngAsync);
             }
 
+			if (e.OldElement != null && Control != null && !_isDisposed)
+			{
+				Control.ImageOpened -= OnImageOpened;
+			}
+
             UpdateSource();
             UpdateAspect();
         }
@@ -117,18 +126,27 @@ namespace FFImageLoading.Forms.WinRT
 #if SILVERLIGHT
         public void Dispose()
         {
+			if (_isDisposed)
+				return;
+
             if (Control != null)
             {
                 Control.ImageOpened -= OnImageOpened;
             }
+			_isDisposed = true;
         }
 #else
-        protected override void Dispose(bool disposing)
+		protected override void Dispose(bool disposing)
         {
+			if (_isDisposed)
+				return;
+			
             if (Control != null)
             {
                 Control.ImageOpened -= OnImageOpened;
             }
+
+			_isDisposed = true;
             base.Dispose(disposing);
         }
 #endif
@@ -340,18 +358,6 @@ namespace FFImageLoading.Forms.WinRT
 
         private void UpdateAspect()
         {
-            if (Element.Aspect == Xamarin.Forms.Aspect.AspectFill
-                && Control.HorizontalAlignment != HorizontalAlignment.Center) // Then Center Crop
-            {
-                Control.HorizontalAlignment = HorizontalAlignment.Center;
-                Control.VerticalAlignment = VerticalAlignment.Center;
-            }
-            else if (Control.HorizontalAlignment != HorizontalAlignment.Left) // Default
-            {
-                Control.HorizontalAlignment = HorizontalAlignment.Left;
-                Control.VerticalAlignment = VerticalAlignment.Top;
-            }
-
             Control.Stretch = GetStretch(Element.Aspect);
         }
 
@@ -370,12 +376,15 @@ namespace FFImageLoading.Forms.WinRT
 
         private void ImageLoadingFinished(CachedImage element)
         {
-            if (element != null)
+            if (element != null && !_isDisposed)
             {
-                var elCtrl = (Xamarin.Forms.IVisualElementController)Element;
-                elCtrl.SetValueFromRenderer(CachedImage.IsLoadingPropertyKey, false);
-                //elCtrl.NativeSizeChanged();
-                HackInvalidateMeasure(Element);
+                var elCtrl = element as Xamarin.Forms.IVisualElementController;
+				if(elCtrl != null) 
+				{
+					elCtrl.SetValueFromRenderer(CachedImage.IsLoadingPropertyKey, false);
+					//elCtrl.NativeSizeChanged();
+					HackInvalidateMeasure(element);
+				}
             }
         }
 

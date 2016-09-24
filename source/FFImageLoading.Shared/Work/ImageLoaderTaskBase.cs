@@ -33,11 +33,12 @@ namespace FFImageLoading.Work
         private readonly Lazy<string> _streamKey;
         private readonly bool _verboseLoadingCancelledLogging;
 
-        protected ImageLoaderTaskBase(IMainThreadDispatcher mainThreadDispatcher, IMiniLogger miniLogger, TaskParameter parameters, bool clearCacheOnOutOfMemory, bool verboseLoadingCancelledLogging)
+        protected ImageLoaderTaskBase(IMainThreadDispatcher mainThreadDispatcher, IMiniLogger miniLogger, TaskParameter parameters, IDownloadCache downloadCache, bool clearCacheOnOutOfMemory, bool verboseLoadingCancelledLogging)
         {
             _verboseLoadingCancelledLogging = verboseLoadingCancelledLogging;
             _clearCacheOnOutOfMemory = clearCacheOnOutOfMemory;
             CancellationToken = new CancellationTokenSource();
+            DownloadCache = downloadCache;
             Parameters = parameters;
             NumberOfRetryNeeded = parameters.RetryCount;
             MainThreadDispatcher = mainThreadDispatcher;
@@ -110,6 +111,8 @@ namespace FFImageLoading.Work
 		protected IMiniLogger Logger { get; private set; }
 
 		protected CancellationTokenSource CancellationToken { get; private set; }
+
+        protected IDownloadCache DownloadCache { get; private set; }
 
 		public int NumberOfRetryNeeded { get; private set; }
 
@@ -220,7 +223,10 @@ namespace FFImageLoading.Work
 						{
 							try
 							{
-								generatingImageSucceeded = await TryGeneratingImageAsync().ConfigureAwait(false);
+                                if (Parameters.Preload && Parameters.CacheType.HasValue && Parameters.CacheType.Value == CacheType.Disk)
+                                    generatingImageSucceeded = await TryDownloadImageAsync().ConfigureAwait(false);
+                                else
+                                    generatingImageSucceeded = await TryGeneratingImageAsync().ConfigureAwait(false);
 							}
 							catch (OutOfMemoryException oom)
 							{
@@ -283,7 +289,7 @@ namespace FFImageLoading.Work
 					if (ex == null)
 						ex = new Exception("FFImageLoading is unable to generate image.");
 
-					Parameters?.OnError(ex);
+                    Parameters?.OnError(ex);
 				}
 			}
 			finally
@@ -307,6 +313,34 @@ namespace FFImageLoading.Work
 		public abstract Task<GenerateResult> LoadFromStreamAsync(Stream stream);
 
 		protected abstract Task<GenerateResult> TryGeneratingImageAsync();
+
+        protected async virtual Task<GenerateResult> TryDownloadImageAsync()
+        {
+            try
+            {
+                if (Parameters.Source != ImageSource.Url)
+                    throw new InvalidOperationException("DownloadOnly: Only Url ImageSource is supported.");
+
+                var data = await DownloadCache.GetStreamAsync(Parameters.Path, CancellationToken.Token, Parameters.CacheDuration, Parameters.CustomCacheKey, Parameters.CacheType).ConfigureAwait(false);
+                using (var imageStream = data.ImageStream)
+                {
+                    if (!data.RetrievedFromDiskCache)
+                        Logger?.Debug(string.Format("DownloadOnly: {0} successfully downloaded.", Parameters.Path));
+                }
+
+                return GenerateResult.Success;
+            }
+            catch (Exception ex)
+            {
+                if (ex is OperationCanceledException)
+                {
+                    return GenerateResult.Canceled;
+                }
+
+                Logger?.Error(string.Format("DownloadOnly: {0} downloaded failed.", Parameters.Path), ex);
+                return GenerateResult.Failed;
+            }
+        }
 
         private string GetKeyInternal(string path, bool raw)
         {
@@ -347,20 +381,31 @@ namespace FFImageLoading.Work
             }
         }
 
-		private void ConfigureParameters()
-		{
-			var successCallback = Parameters.OnSuccess;
-			var errorCallback = Parameters.OnError;
-			var finishCallback = Parameters.OnFinish;
+        private void ConfigureParameters()
+        {
+            var successCallback = Parameters.OnSuccess;
+            var errorCallback = Parameters.OnError;
+            var finishCallback = Parameters.OnFinish;
 
-			// make sure callbacks are invoked on Main thread
-			Parameters.Success((s, r) => MainThreadDispatcher.Post(() => successCallback(s, r)));
-			Parameters.Error(ex => MainThreadDispatcher.Post(() => errorCallback(ex)));
+            // make sure callbacks are invoked on Main thread
+            Parameters.Success((s, r) =>
+            {
+                if (successCallback != null)
+                    MainThreadDispatcher.Post(() => successCallback(s, r));
+            });
+            Parameters.Error(ex =>
+            {
+                if (errorCallback != null)
+                    MainThreadDispatcher.Post(() => errorCallback(ex));
+            });
 			Parameters.Finish(scheduledWork =>
-				{
-					MainThreadDispatcher.Post(() => finishCallback(scheduledWork));
-					Parameters.Dispose(); // if Finish is called then Parameters are useless now, we can dispose them so we don't keep a reference to callbacks
-				});
+			{
+                if (finishCallback != null)
+                {
+                    MainThreadDispatcher.Post(() => finishCallback(scheduledWork));
+                }
+				Parameters?.Dispose(); // if Finish is called then Parameters are useless now, we can dispose them so we don't keep a reference to callbacks
+			});
 		}
 	}
 }

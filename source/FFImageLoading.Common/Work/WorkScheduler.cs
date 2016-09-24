@@ -7,6 +7,7 @@ using System.Threading;
 using FFImageLoading.Cache;
 using FFImageLoading.Concurrency;
 using System.Diagnostics;
+using FFImageLoading.Config;
 
 namespace FFImageLoading.Work
 {
@@ -68,17 +69,12 @@ namespace FFImageLoading.Work
         int _statsTotalWaiting;
         long _loadCount;
 
-        public WorkScheduler(IMiniLogger logger, bool verbosePerformanceLogging, IPlatformPerformance performance)
+        public WorkScheduler(IMiniLogger logger, bool verbosePerformanceLogging, IPlatformPerformance performance, int maxParallelTasks)
         {
             _verbosePerformanceLogging = verbosePerformanceLogging;
             _logger = logger;
             _performance = performance;
-
-            int _processorCount = Environment.ProcessorCount;
-            if (_processorCount <= 2)
-                _maxParallelTasks = 1;
-            else
-                _maxParallelTasks = (int)Math.Truncate((double)_processorCount / 2d) + 1;
+            _maxParallelTasks = maxParallelTasks;
         }
 
         public void Cancel(IImageLoaderTask task)
@@ -373,6 +369,17 @@ namespace FFImageLoading.Work
             return tcs.Task;
         }
 
+        private int GetDefaultPriority(ImageSource source)
+        {
+            if (source == ImageSource.ApplicationBundle || source == ImageSource.CompiledResource)
+                return (int)LoadingPriority.Normal + 2;
+            
+            if (source == ImageSource.Filepath)
+                return (int)LoadingPriority.Normal + 1;
+
+            return (int)LoadingPriority.Normal;
+        }
+
         private async Task RunAsync()
         {
             Dictionary<string, PendingTask> currentLotOfPendingTasks = null;
@@ -390,7 +397,7 @@ namespace FFImageLoading.Work
 
                     foreach (var task in _pendingTasks
                                 .Where(t => !t.ImageLoadingTask.IsCancelled && !t.ImageLoadingTask.Completed)
-                                .OrderByDescending(t => t.ImageLoadingTask.Parameters.Priority ?? (int)LoadingPriority.Normal)
+                             .OrderByDescending(t => t.ImageLoadingTask.Parameters.Priority ?? GetDefaultPriority(t.ImageLoadingTask.Parameters.Source))
                                 .ThenBy(t => t.Position))
                     {
                         // We don't want to load, at the same time, images that have same key or same raw key at the same time

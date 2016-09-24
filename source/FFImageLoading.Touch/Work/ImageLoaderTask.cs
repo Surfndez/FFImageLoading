@@ -8,11 +8,13 @@ using FFImageLoading.Work.DataResolver;
 using System.Linq;
 using System.IO;
 using FFImageLoading.Extensions;
+using System.Threading;
 
 namespace FFImageLoading.Work
 {
 	public class ImageLoaderTask : ImageLoaderTaskBase
 	{
+        private static readonly SemaphoreSlim _decodingLock = new SemaphoreSlim(1, 1);
 		internal readonly ITarget<UIImage, ImageLoaderTask> _target;
 		
 		static ImageLoaderTask()
@@ -25,16 +27,13 @@ namespace FFImageLoading.Work
 		}
 
 		public ImageLoaderTask(IDownloadCache downloadCache, IMainThreadDispatcher mainThreadDispatcher, IMiniLogger miniLogger, TaskParameter parameters, nfloat imageScale, ITarget<UIImage, ImageLoaderTask> target, bool clearCacheOnOutOfMemory)
-			: base(mainThreadDispatcher, miniLogger, parameters, true, clearCacheOnOutOfMemory)
+			: base(mainThreadDispatcher, miniLogger, parameters, downloadCache, true, clearCacheOnOutOfMemory)
 		{
 			if (target == null)
 				throw new ArgumentNullException(nameof(target));
 			
 			_target = target;
-			DownloadCache = downloadCache;
 		}
-
-		protected IDownloadCache DownloadCache { get; private set; }
 
 		/// <summary>
 		/// Indicates if the task uses the same native control
@@ -58,7 +57,8 @@ namespace FFImageLoading.Work
 					return true; // stop processing if loaded from cache OR if loading from cached raised an exception
 			}
 
-			await LoadPlaceHolderAsync(Parameters.LoadingPlaceholderPath, Parameters.LoadingPlaceholderSource, true).ConfigureAwait(false);
+            await LoadPlaceHolderAsync(Parameters.LoadingPlaceholderPath, Parameters.LoadingPlaceholderSource, true).ConfigureAwait(false);
+            
 			return false;
 		}
 
@@ -158,7 +158,7 @@ namespace FFImageLoading.Work
 			}
 			catch (Exception ex)
 			{
-				Parameters?.OnError(ex);
+                Parameters?.OnError(ex);
 				return CacheResult.ErrorOccured; // weird, what can we do if loading from cache fails
 			}
 		}
@@ -303,7 +303,7 @@ namespace FFImageLoading.Work
 			{
 				var message = String.Format("Unable to retrieve image data from source: {0}", sourcePath);
 				Logger.Error(message, ex);
-				Parameters.OnError(ex);
+                Parameters?.OnError(ex);
 				return new WithLoadingResult<UIImage>(LoadingResult.Failed);
 			}
 
@@ -369,30 +369,42 @@ namespace FFImageLoading.Work
 			bool transformPlaceholdersEnabled = Parameters.TransformPlaceholdersEnabled.HasValue ? 
 				Parameters.TransformPlaceholdersEnabled.Value : ImageService.Instance.Config.TransformPlaceholders;
 
-			if (Parameters.Transformations != null && Parameters.Transformations.Count > 0 
-				&& (!isPlaceholder || (isPlaceholder && transformPlaceholdersEnabled)))
-			{
-				foreach (var transformation in Parameters.Transformations.ToList() /* to prevent concurrency issues */)
-				{
-					if (IsCancelled)
-						return new WithLoadingResult<UIImage>(LoadingResult.Canceled);
+            if (Parameters.Transformations != null && Parameters.Transformations.Count > 0 
+            	&& (!isPlaceholder || (isPlaceholder && transformPlaceholdersEnabled)))
+            {
+                await _decodingLock.WaitAsync().ConfigureAwait(false); // Applying transformations is both CPU and memory intensive
 
-					try
-					{
-						var old = imageIn;
-						var bitmapHolder = transformation.Transform(new BitmapHolder(imageIn));
-						imageIn = bitmapHolder.ToNative();
+                try
+                {
+                    if (IsCancelled)
+                        return new WithLoadingResult<UIImage>(LoadingResult.Canceled);
 
-						// Transformation succeeded, so garbage the source
-						if (old != null && old != imageIn && old.Handle != imageIn.Handle)
-							old.Dispose();
-					}
-					catch (Exception ex)
-					{
-						Logger.Error("Can't apply transformation " + transformation.Key + " to image " + path, ex);
-					}
-				}
-			}
+                    foreach (var transformation in Parameters.Transformations.ToList() /* to prevent concurrency issues */)
+                    {
+                        if (IsCancelled)
+                            return new WithLoadingResult<UIImage>(LoadingResult.Canceled);
+
+                        try
+                        {
+                            var old = imageIn;
+                            var bitmapHolder = transformation.Transform(new BitmapHolder(imageIn));
+                            imageIn = bitmapHolder.ToNative();
+
+                            // Transformation succeeded, so garbage the source
+                            if (old != null && old != imageIn && old.Handle != imageIn.Handle)
+                                old.Dispose();
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Error("Can't apply transformation " + transformation.Key + " to image " + path, ex);
+                        }
+                    }
+                }
+                finally
+                {
+                    _decodingLock.Release();
+                }
+            }
 				
 			return WithLoadingResult.Encapsulate(imageIn, result.Value, imageInformation);
 		}
@@ -405,28 +417,33 @@ namespace FFImageLoading.Work
 		/// <param name="source">Source for the path: local, web, assets</param>
 		private async Task<bool> LoadPlaceHolderAsync(string placeholderPath, ImageSource source, bool isLoadingPlaceholder)
 		{
-			if (string.IsNullOrWhiteSpace(placeholderPath))
-				return false;
-
-			bool isLocalOrFromCache = true;
+            if (Parameters.Preload || string.IsNullOrWhiteSpace(placeholderPath))
+            {
+                return false;
+            }
 
 			var cacheEntry = ImageCache.Instance.Get(GetKey(placeholderPath));
 			UIImage image = cacheEntry == null ? null: cacheEntry.Item1;
 
-			if (image == null)
-			{
-				try
-				{
-					var imageWithResult = await RetrieveImageAsync(placeholderPath, source, true).ConfigureAwait(false);
-					image = imageWithResult.Item;
-					isLocalOrFromCache = imageWithResult.Result.IsLocalOrCachedResult();
-				}
-				catch (Exception ex)
-				{
-					Logger.Error("An error occured while retrieving placeholder's drawable.", ex);
+            if (image == null)
+            {
+                try
+                {
+                    var imageWithResult = await RetrieveImageAsync(placeholderPath, source, true).ConfigureAwait(false);
+                    image = imageWithResult.Item;
+                    //isLocalOrFromCache = imageWithResult.Result.IsLocalOrCachedResult();
+                    MainThreadDispatcher.Post(() => _target.Set(this, image, true, isLoadingPlaceholder));
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("An error occured while retrieving placeholder's drawable.", ex);
 					return false;
 				}
 			}
+            else
+            {
+                MainThreadDispatcher.Post(() => _target.Set(this, image, true, isLoadingPlaceholder));
+            }
 
 			if (image == null)
 				return false;
@@ -436,9 +453,6 @@ namespace FFImageLoading.Work
 
 			if (IsCancelled)
 				return false;
-
-			// Post on main thread but don't wait for it
-			MainThreadDispatcher.Post(() => _target.Set(this, image, isLocalOrFromCache, isLoadingPlaceholder));
 
 			return true;
 		}

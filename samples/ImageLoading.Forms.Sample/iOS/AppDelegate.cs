@@ -15,7 +15,6 @@ namespace FFImageLoading.Forms.Sample.iOS
 			FFImageLoading.Forms.Touch.CachedImageRenderer.Init();
 
 			global::Xamarin.Forms.Forms.Init();
-			LoadApplication(new App());
 
 			var config = new FFImageLoading.Config.Configuration()
 			{
@@ -26,6 +25,8 @@ namespace FFImageLoading.Forms.Sample.iOS
 				Logger = new CustomLogger(),
 			};
 			ImageService.Instance.Initialize(config);
+
+			LoadApplication(new App());
 
 			return base.FinishedLaunching(app, options);
 		}

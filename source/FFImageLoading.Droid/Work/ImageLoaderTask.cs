@@ -23,19 +23,18 @@ namespace FFImageLoading.Work
 {
 	public class ImageLoaderTask : ImageLoaderTaskBase
 	{
-		private static readonly SemaphoreSlim _decodingLock = new SemaphoreSlim(1);
+		private static readonly SemaphoreSlim _decodingLock = new SemaphoreSlim(1, 1);
 
 		private WeakReference<BitmapDrawable> _loadingPlaceholderWeakReference;
 		internal ITarget<BitmapDrawable, ImageLoaderTask> _target;
 
 		public ImageLoaderTask(IDownloadCache downloadCache, IMainThreadDispatcher mainThreadDispatcher, IMiniLogger miniLogger, TaskParameter parameters, ITarget<BitmapDrawable, ImageLoaderTask> target)
-			: base(mainThreadDispatcher, miniLogger, parameters, true, ImageService.Instance.Config.VerboseLoadingCancelledLogging)
+			: base(mainThreadDispatcher, miniLogger, parameters, downloadCache, true, ImageService.Instance.Config.VerboseLoadingCancelledLogging)
 		{
 			if (target == null)
 				throw new ArgumentNullException(nameof(target));
 
 			_target = target;
-			DownloadCache = downloadCache;
 		}
 
 		/// <summary>
@@ -77,24 +76,16 @@ namespace FFImageLoading.Work
 					return true; // stop processing if cancelled
 			}
 
-			bool hasDrawable = await LoadPlaceHolderAsync(Parameters.LoadingPlaceholderPath, Parameters.LoadingPlaceholderSource, true).ConfigureAwait(false);
-			if (!hasDrawable)
-			{
-				// Assign the Drawable to the image
-				var drawable = new AsyncDrawable(Context.Resources, null, this);
-				await MainThreadDispatcher.PostAsync(() => _target.Set(this, drawable, true, true)).ConfigureAwait(false);
-			}
+            await LoadPlaceHolderAsync(Parameters.LoadingPlaceholderPath, Parameters.LoadingPlaceholderSource, true).ConfigureAwait(false);
 
 			return false;
 		}
-
-		protected IDownloadCache DownloadCache { get; private set; }
 
 		protected Context Context
 		{
 			get
 			{
-				return Android.App.Application.Context.ApplicationContext;
+				return new Android.Content.ContextWrapper(Android.App.Application.Context);
 			}
 		}
 
@@ -221,7 +212,7 @@ namespace FFImageLoading.Work
 			}
 			catch (Exception ex)
 			{
-				Parameters?.OnError(ex);
+                Parameters?.OnError(ex);
 				return CacheResult.ErrorOccured; // weird, what can we do if loading from cache fails
 			}
 		}
@@ -319,8 +310,8 @@ namespace FFImageLoading.Work
 			try
 			{
 				try
-				{
-					BitmapFactory.DecodeStream(stream, null, options);
+                {
+                    await BitmapFactory.DecodeStreamAsync(stream, null, options).ConfigureAwait(false);
 
 					if (!stream.CanSeek)
 					{
@@ -364,6 +355,7 @@ namespace FFImageLoading.Work
 
 				options.InPurgeable = true;
 				options.InJustDecodeBounds = false;
+                options.InDither = true;
 
 				if (!ImageService.Instance.Config.LoadWithTransparencyChannel || Parameters.LoadTransparencyChannel == null || !Parameters.LoadTransparencyChannel.Value)
 				{
@@ -422,7 +414,7 @@ namespace FFImageLoading.Work
 				Bitmap bitmap;
 				try
 				{
-					bitmap = BitmapFactory.DecodeStream(stream, null, options);
+                    bitmap = await BitmapFactory.DecodeStreamAsync(stream, null, options).ConfigureAwait(false);
 				}
 				catch (Java.Lang.Throwable vme)
 				{
@@ -457,6 +449,9 @@ namespace FFImageLoading.Work
                     await _decodingLock.WaitAsync().ConfigureAwait(false); // Applying transformations is both CPU and memory intensive
                     try
                     {
+                        if (IsCancelled)
+                            return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
+                        
                         foreach (var transformation in Parameters.Transformations.ToList() /* to prevent concurrency issues */)
                         {
                             if (IsCancelled)
@@ -540,13 +535,12 @@ namespace FFImageLoading.Work
 		/// <param name="source">Source for the path: local, web, assets</param>
 		protected async Task<bool> LoadPlaceHolderAsync(string placeholderPath, ImageSource source, bool isLoadingPlaceholder)
 		{
-			if (string.IsNullOrWhiteSpace(placeholderPath))
+			if (Parameters.Preload || string.IsNullOrWhiteSpace(placeholderPath))
 				return false;
 
 			if (!_target.IsValid)
 				return false;
 
-			bool isLocalOrFromCache = true;
 			var cacheEntry = ImageCache.Instance.Get(GetKey(placeholderPath));
 
 			BitmapDrawable drawable = cacheEntry == null ? null: cacheEntry.Item1;
@@ -556,21 +550,20 @@ namespace FFImageLoading.Work
 			{
 				// We should wrap drawable in an AsyncDrawable, nothing is deferred
 				drawable = new SelfDisposingAsyncDrawable(Context.Resources, drawable.Bitmap, this);
-
-				await MainThreadDispatcher.PostAsync(() => _target.Set(this, drawable, isLocalOrFromCache, isLoadingPlaceholder)).ConfigureAwait(false);
+				await MainThreadDispatcher.PostAsync(() => _target.Set(this, drawable, true, isLoadingPlaceholder)).ConfigureAwait(false);
 			}
 			else
 			{
 				// Here we asynchronously load our placeholder: it is deferred so we need a temporary AsyncDrawable
-				drawable = new AsyncDrawable(Context.Resources, null, this);
-				await MainThreadDispatcher.PostAsync(() => _target.Set(this, drawable, true, isLoadingPlaceholder)).ConfigureAwait(false); // temporary assign this AsyncDrawable
+				// drawable = new AsyncDrawable(Context.Resources, null, this);
+				// await MainThreadDispatcher.PostAsync(() => _target.Set(this, drawable, true, isLoadingPlaceholder)).ConfigureAwait(false);
 
 				try
 				{
 					var drawableWithResult = await RetrieveDrawableAsync(placeholderPath, source, true, true).ConfigureAwait(false);
 					drawable = drawableWithResult.Item;
-					isLocalOrFromCache = drawableWithResult.Result.IsLocalOrCachedResult();
-				}
+                    await MainThreadDispatcher.PostAsync(() => _target.Set(this, drawable, true, isLoadingPlaceholder)).ConfigureAwait(false); // temporary assign this AsyncDrawable
+                }
 				catch (Exception ex)
 				{
 					Logger.Error("An error occured while retrieving drawable.", ex);
@@ -625,7 +618,7 @@ namespace FFImageLoading.Work
 			if (IsCancelled || ImageService.Instance.ExitTasksEarly)
 				return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.Canceled);
 
-			if (!_target.IsTaskValid(this))
+            if (!isLoadingPlaceHolder && !_target.IsTaskValid(this))
 				return new WithLoadingResult<SelfDisposingBitmapDrawable>(LoadingResult.InvalidTarget);
 
 			var resultWithDrawable = await GetDrawableAsync(sourcePath, source, isLoadingPlaceHolder, isPlaceholder).ConfigureAwait(false);

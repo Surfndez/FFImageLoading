@@ -38,7 +38,7 @@ namespace FFImageLoading.Forms.Touch
 			var uriImageSource = source as UriImageSource;
 			if (uriImageSource != null)
 			{
-				var uri = uriImageSource.Uri?.ToString();
+				var uri = uriImageSource.Uri?.OriginalString;
 				if (string.IsNullOrWhiteSpace(uri))
 					return null;
 
@@ -75,7 +75,7 @@ namespace FFImageLoading.Forms.Touch
 				return false;
 			}
 
-			return this.ImageSource.Equals(item.ImageSource) && this.Path.Equals(item.Path) && this.Stream.Equals(item.Stream);
+			return this.ImageSource == item.ImageSource && this.Path == item.Path && this.Stream == item.Stream;
 		}
 
 		public override int GetHashCode()
