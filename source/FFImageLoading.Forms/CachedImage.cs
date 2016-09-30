@@ -264,7 +264,7 @@ namespace FFImageLoading.Forms
 		/// <summary>
 		/// The cache duration property.
 		/// </summary>
-        public static readonly BindableProperty CacheDurationProperty = BindableProperty.Create(nameof(CacheDuration), typeof(TimeSpan), typeof(CachedImage), TimeSpan.FromDays(90));
+		public static readonly BindableProperty CacheDurationProperty = BindableProperty.Create(nameof(CacheDuration), typeof(TimeSpan), typeof(CachedImage), default(TimeSpan));
 
 		/// <summary>
 		/// How long the file will be cached on disk.
@@ -719,6 +719,45 @@ namespace FFImageLoading.Forms
 			var finishCommand = FinishCommand;
 			if (finishCommand != null && finishCommand.CanExecute(e))
 				finishCommand.Execute(e);
+		}
+
+
+		/// <summary>
+		/// Occurs when an image starts downloading from web.
+		/// </summary>
+		public event EventHandler<EventArgs> DownloadStarted;
+
+		/// <summary>
+		/// The DownloadStartedCommandProperty.
+		/// </summary>
+		public static readonly BindableProperty DownloadStartedCommandProperty = BindableProperty.Create(nameof(DownloadStartedCommand), typeof(ICommand), typeof(CachedImage));
+
+		/// <summary>
+		/// Gets or sets the DownloadStartedCommand.
+		///  Occurs when an image starts downloading from web.
+		/// Command parameter: EventArgs
+		/// </summary>
+		/// <value>The download started command.</value>
+		public ICommand DownloadStartedCommand
+		{
+			get
+			{
+				return (ICommand)GetValue(DownloadStartedCommandProperty);
+			}
+			set
+			{
+				SetValue(DownloadStartedCommandProperty, value);
+			}
+		}
+
+		internal void OnDownloadStarted(EventArgs e)
+		{
+			var handler = DownloadStarted;
+			if (handler != null) handler(this, e);
+
+			var downloadStartedCommand = DownloadStartedCommand;
+			if (downloadStartedCommand != null && downloadStartedCommand.CanExecute(e))
+				downloadStartedCommand.Execute(e);
 		}
 
         /// <summary>

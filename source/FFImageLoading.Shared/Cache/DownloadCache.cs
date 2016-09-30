@@ -11,28 +11,31 @@ namespace FFImageLoading.Cache
     {
         private readonly MD5Helper _md5Helper;
         private readonly IDiskCache _diskCache;
+        private readonly TimeSpan _diskCacheDuration;
 		private const int BufferSize = 4096; // Xamarin large object heap threshold is 8K
 
-        public DownloadCache(HttpClient httpClient, IDiskCache diskCache)
+        public DownloadCache(HttpClient httpClient, IDiskCache diskCache, TimeSpan diskCacheDuration)
         {
 			DownloadHttpClient = httpClient;
             _md5Helper = new MD5Helper();
             _diskCache = diskCache;
+            _diskCacheDuration = diskCacheDuration;
         }
 
 		public HttpClient DownloadHttpClient { get; set; }
 
 		public async Task<string> GetDiskCacheFilePathAsync(string url, string key = null)
 		{
-			string filename = string.IsNullOrWhiteSpace(key) ? _md5Helper.MD5(url) : _md5Helper.MD5(key);
-			return await _diskCache.GetFilePathAsync(filename);
+            string filename = (string.IsNullOrWhiteSpace(key) ? _md5Helper.MD5(url) : _md5Helper.MD5(key))?.ToSanitizedKey();
+            return await _diskCache.GetFilePathAsync(filename).ConfigureAwait(false);
 		}
 
-		public async Task<DownloadedData> GetAsync(string url, CancellationToken token, TimeSpan? duration = null, string key = null, CacheType? cacheType = null)
+		public async Task<DownloadedData> GetAsync(string url, CancellationToken token, Action<DownloadInformation> onDownloadStarted, TimeSpan? duration = null, string key = null, CacheType? cacheType = null)
         {
-            string filename = string.IsNullOrWhiteSpace(key) ? _md5Helper.MD5(url) : _md5Helper.MD5(key);
+            string filename = (string.IsNullOrWhiteSpace(key) ? _md5Helper.MD5(url) : _md5Helper.MD5(key))?.ToSanitizedKey();
 		    var allowDiskCaching = AllowDiskCaching(cacheType);
-            string filepath = allowDiskCaching == false ? null : await _diskCache.GetFilePathAsync(filename);
+            string filepath = allowDiskCaching == false ? null : await _diskCache.GetFilePathAsync(filename).ConfigureAwait(false);
+
             if (allowDiskCaching)
             {
                 byte[] data = await _diskCache.TryGetAsync(filename, token).ConfigureAwait(false);
@@ -40,15 +43,18 @@ namespace FFImageLoading.Cache
                     return new DownloadedData(filepath, data) { RetrievedFromDiskCache = true };
             }
 
-			var bytes = await DownloadBytesAndCacheAsync(url, filename, filepath, token, duration, cacheType).ConfigureAwait(false);
+            var downloadInformation = new DownloadInformation(url, key, filename, allowDiskCaching, duration);
+            onDownloadStarted?.Invoke(downloadInformation);
+
+			var bytes = await DownloadBytesAndCacheAsync(url, filename, token, duration, cacheType).ConfigureAwait(false);
 			return new DownloadedData(filepath, bytes);
         }
 
-		public async Task<CacheStream> GetStreamAsync(string url, CancellationToken token, TimeSpan? duration = null, string key = null, CacheType? cacheType = null)
+		public async Task<CacheStream> GetStreamAsync(string url, CancellationToken token, Action<DownloadInformation> onDownloadStarted, TimeSpan? duration = null, string key = null, CacheType? cacheType = null)
 		{
-			string filename = string.IsNullOrWhiteSpace(key) ? _md5Helper.MD5(url) : _md5Helper.MD5(key);
+			string filename = (string.IsNullOrWhiteSpace(key) ? _md5Helper.MD5(url) : _md5Helper.MD5(key))?.ToSanitizedKey();
             var allowDiskCaching = AllowDiskCaching(cacheType);
-            string filepath = allowDiskCaching == false ? null : await _diskCache.GetFilePathAsync(filename);
+
             if (allowDiskCaching)
             {
                 var diskStream = await _diskCache.TryGetStreamAsync(filename).ConfigureAwait(false);
@@ -56,11 +62,14 @@ namespace FFImageLoading.Cache
                     return new CacheStream(diskStream, true);
             }
 
-			var memoryStream = await DownloadStreamAndCacheAsync(url, filename, filepath, token, duration, cacheType).ConfigureAwait(false);
+            var downloadInformation = new DownloadInformation(url, key, filename, allowDiskCaching, duration);
+            onDownloadStarted?.Invoke(downloadInformation);
+
+			var memoryStream = await DownloadStreamAndCacheAsync(url, filename, token, duration, cacheType).ConfigureAwait(false);
 			return new CacheStream(memoryStream, false);
 		}
 
-		private async Task<MemoryStream> DownloadStreamAndCacheAsync(string url, string filename, string filepath, CancellationToken token, TimeSpan? duration, CacheType? cacheType)
+		private async Task<MemoryStream> DownloadStreamAndCacheAsync(string url, string filename, CancellationToken token, TimeSpan? duration, CacheType? cacheType)
 		{
 			var responseBytes = await DownloadAsync(url, filename, token).ConfigureAwait(false);
 			if (responseBytes == null)
@@ -72,13 +81,13 @@ namespace FFImageLoading.Cache
             var allowDiskCaching = AllowDiskCaching(cacheType);
             if (allowDiskCaching)
             {
-                await _diskCache.AddToSavingQueueIfNotExistsAsync(filename, responseBytes, duration ?? new TimeSpan(30, 0, 0, 0)); // by default we cache data 30 days)
+                await _diskCache.AddToSavingQueueIfNotExistsAsync(filename, responseBytes, duration ?? _diskCacheDuration).ConfigureAwait(false);
             }
 			
 			return memoryStream;
 		}
 
-		private async Task<byte[]> DownloadBytesAndCacheAsync(string url, string filename, string filepath, CancellationToken token, TimeSpan? duration, CacheType? cacheType)
+		private async Task<byte[]> DownloadBytesAndCacheAsync(string url, string filename, CancellationToken token, TimeSpan? duration, CacheType? cacheType)
 		{
 			var responseBytes = await DownloadAsync(url, filename, token).ConfigureAwait(false);
 			if (responseBytes == null)
@@ -87,7 +96,7 @@ namespace FFImageLoading.Cache
             var allowDiskCaching = AllowDiskCaching(cacheType);
 			if (allowDiskCaching)
             {
-                await _diskCache.AddToSavingQueueIfNotExistsAsync(filename, responseBytes, duration ?? new TimeSpan(30, 0, 0, 0)); // by default we cache data 30 days)
+                await _diskCache.AddToSavingQueueIfNotExistsAsync(filename, responseBytes, duration ?? _diskCacheDuration).ConfigureAwait(false);
             }
 			
 			return responseBytes;
@@ -98,6 +107,7 @@ namespace FFImageLoading.Cache
 			using (var cancelHeadersToken = new CancellationTokenSource())
 			{
 				cancelHeadersToken.CancelAfter(TimeSpan.FromSeconds(ImageService.Instance.Config.HttpHeadersTimeout));
+
 				using (var linkedHeadersToken = CancellationTokenSource.CreateLinkedTokenSource(token, cancelHeadersToken.Token))
 				{
 					using (var response = await DownloadHttpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, linkedHeadersToken.Token).ConfigureAwait(false))
