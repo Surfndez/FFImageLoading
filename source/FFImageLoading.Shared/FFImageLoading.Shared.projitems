@@ -11,15 +11,12 @@
   <ItemGroup>
     <Folder Include="$(MSBuildThisFileDirectory)Helpers\" />
     <Folder Include="$(MSBuildThisFileDirectory)Cache\" />
-    <Folder Include="$(MSBuildThisFileDirectory)Work\" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)Helpers\MD5Helper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helpers\MiniLogger.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)IO\FileStore.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Cache\DownloadCache.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ImageService.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Work\ImageLoaderTaskBase.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Cache\SimpleDiskCache.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Cache\CacheEntry.cs" />
   </ItemGroup>

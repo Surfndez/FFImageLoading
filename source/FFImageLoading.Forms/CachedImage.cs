@@ -304,11 +304,13 @@ namespace FFImageLoading.Forms
 		/// <summary>
 		/// The transparency enabled property.
 		/// </summary>
+		[Obsolete("Use BitmapOptimizationsProperty")]
         public static readonly BindableProperty TransparencyEnabledProperty = BindableProperty.Create(nameof(TransparencyEnabled), typeof(bool?), typeof(CachedImage), default(bool?));
 
 		/// <summary>
 		/// Indicates if the transparency channel should be loaded. By default this value comes from ImageService.Instance.Config.LoadWithTransparencyChannel.
 		/// </summary>
+		[Obsolete("Use BitmapOptimizations")]
 		public bool? TransparencyEnabled
 		{
 			get
@@ -318,6 +320,27 @@ namespace FFImageLoading.Forms
 			set
 			{
 				SetValue(TransparencyEnabledProperty, value); 
+			}
+		}
+
+		/// <summary>
+		/// The bitmap optimizations property.
+		/// </summary>
+		public static readonly BindableProperty BitmapOptimizationsProperty = BindableProperty.Create(nameof(BitmapOptimizations), typeof(bool?), typeof(CachedImage), default(bool?));
+
+		/// <summary>
+		/// Enables or disables the bitmap optimizations.
+		/// </summary>
+		/// <value>The bitmap optimizations.</value>
+		public bool? BitmapOptimizations
+		{
+			get
+			{
+				return (bool?)GetValue(BitmapOptimizationsProperty);
+			}
+			set
+			{
+				SetValue(BitmapOptimizationsProperty, value);
 			}
 		}
 
@@ -725,7 +748,7 @@ namespace FFImageLoading.Forms
 		/// <summary>
 		/// Occurs when an image starts downloading from web.
 		/// </summary>
-		public event EventHandler<EventArgs> DownloadStarted;
+		public event EventHandler<CachedImageEvents.DownloadStartedEventArgs> DownloadStarted;
 
 		/// <summary>
 		/// The DownloadStartedCommandProperty.
@@ -750,10 +773,9 @@ namespace FFImageLoading.Forms
 			}
 		}
 
-		internal void OnDownloadStarted(EventArgs e)
+		internal void OnDownloadStarted(CachedImageEvents.DownloadStartedEventArgs e)
 		{
-			var handler = DownloadStarted;
-			if (handler != null) handler(this, e);
+			DownloadStarted?.Invoke(this, e);
 
 			var downloadStartedCommand = DownloadStartedCommand;
 			if (downloadStartedCommand != null && downloadStartedCommand.CanExecute(e))

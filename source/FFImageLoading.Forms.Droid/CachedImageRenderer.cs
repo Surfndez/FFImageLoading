@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 using FFImageLoading.Extensions;
 using FFImageLoading.Forms.Args;
 using System.Threading;
+using FFImageLoading.Helpers;
 
 [assembly: ExportRenderer(typeof(CachedImage), typeof(CachedImageRenderer))]
 namespace FFImageLoading.Forms.Droid
@@ -227,6 +228,9 @@ namespace FFImageLoading.Forms.Droid
 					if (Element.TransparencyEnabled.HasValue)
 						imageLoader.TransparencyChannel(Element.TransparencyEnabled.Value);
 
+					if (Element.BitmapOptimizations.HasValue)
+						imageLoader.BitmapOptimizations(Element.BitmapOptimizations.Value);
+
 					// FadeAnimation
 					if (Element.FadeAnimationEnabled.HasValue)
 						imageLoader.FadeAnimation(Element.FadeAnimationEnabled.Value);
@@ -279,11 +283,14 @@ namespace FFImageLoading.Forms.Droid
 
 		private void ImageLoadingFinished(CachedImage element)
 		{
-			if (element != null && !_isDisposed)
+			MainThreadDispatcher.Instance.Post(() =>
 			{
-				((IElementController)element).SetValueFromRenderer(CachedImage.IsLoadingPropertyKey, false);
-				((IVisualElementController)element).NativeSizeChanged();
-			}
+				if (element != null && !_isDisposed)
+				{
+					((IElementController)element).SetValueFromRenderer(CachedImage.IsLoadingPropertyKey, false);
+					((IVisualElementController)element).NativeSizeChanged();
+				}
+			});
 		}
 
 		private void ReloadImage()

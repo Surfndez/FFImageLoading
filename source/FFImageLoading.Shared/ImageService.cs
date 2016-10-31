@@ -10,7 +10,6 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Linq;
 
-
 #if SILVERLIGHT
 using FFImageLoading.Concurrency;
 #else
@@ -76,18 +75,14 @@ namespace FFImageLoading
 
 				if (_config != null)
 				{
-					// If DownloadCache is not updated but HttpClient is then we inform DownloadCache
-					if (configuration.HttpClient != null && configuration.DownloadCache == null)
-					{
-						configuration.DownloadCache = _config.DownloadCache;
-						configuration.DownloadCache.DownloadHttpClient = configuration.HttpClient;
-					}
-
 					// Redefine these if they were provided only
 					configuration.HttpClient = configuration.HttpClient ?? _config.HttpClient;
 					configuration.Scheduler = configuration.Scheduler ?? _config.Scheduler;
 					configuration.Logger = configuration.Logger ?? _config.Logger;
 					configuration.DownloadCache = configuration.DownloadCache ?? _config.DownloadCache;
+                    configuration.DataResolverFactory = configuration.DataResolverFactory ?? _config.DataResolverFactory;
+                    configuration.SchedulerMaxParallelTasksFactory = configuration.SchedulerMaxParallelTasksFactory ?? _config.SchedulerMaxParallelTasksFactory;
+                    configuration.MD5Helper = configuration.MD5Helper ?? _config.MD5Helper;
 
 					// Skip configuration for maxMemoryCacheSize and diskCache. They cannot be redefined.
 					if (configuration.Logger != null)
@@ -113,22 +108,27 @@ namespace FFImageLoading
 				if (userDefinedConfig == null)
 					userDefinedConfig = new Configuration();
 
+                var logger = new MiniLoggerWrapper(userDefinedConfig.Logger ?? new MiniLogger(), userDefinedConfig.VerboseLogging);
+                userDefinedConfig.Logger = logger;
+
+                var md5Helper = userDefinedConfig.MD5Helper ?? new MD5Helper();
+                userDefinedConfig.MD5Helper = md5Helper;
+
 				var httpClient = userDefinedConfig.HttpClient ?? new HttpClient();
 
 				if (userDefinedConfig.HttpReadTimeout > 0)
 				{
 					httpClient.Timeout = TimeSpan.FromSeconds(userDefinedConfig.HttpReadTimeout);
 				}
+                userDefinedConfig.HttpClient = httpClient;
 
-                var logger = new MiniLoggerWrapper(userDefinedConfig.Logger ?? new MiniLogger(), userDefinedConfig.VerboseLogging);
-                var scheduler = userDefinedConfig.Scheduler ?? new WorkScheduler(logger, userDefinedConfig.VerbosePerformanceLogging, new PlatformPerformance(), userDefinedConfig.SchedulerMaxParallelTasks);
-				var diskCache = userDefinedConfig.DiskCache ?? SimpleDiskCache.CreateCache("FFSimpleDiskCache");
-                var downloadCache = userDefinedConfig.DownloadCache ?? new DownloadCache(httpClient, diskCache, userDefinedConfig.DiskCacheDuration);
+                var scheduler = userDefinedConfig.Scheduler ?? new WorkScheduler(userDefinedConfig, new PlatformPerformance());
+                userDefinedConfig.Scheduler = scheduler;
 
-				userDefinedConfig.HttpClient = httpClient;
-				userDefinedConfig.Scheduler = scheduler;
-				userDefinedConfig.Logger = logger;
-				userDefinedConfig.DiskCache = diskCache;
+				var diskCache = userDefinedConfig.DiskCache ?? SimpleDiskCache.CreateCache("FFSimpleDiskCache", userDefinedConfig);
+                userDefinedConfig.DiskCache = diskCache;
+
+                var downloadCache = userDefinedConfig.DownloadCache ?? new DownloadCache(userDefinedConfig);
 				userDefinedConfig.DownloadCache = downloadCache;
 
 				Config = userDefinedConfig;
@@ -139,7 +139,8 @@ namespace FFImageLoading
 
         private IWorkScheduler Scheduler
         {
-            get {
+            get 
+            {
                 InitializeIfNeeded();
                 return Config.Scheduler;
             }
@@ -229,6 +230,18 @@ namespace FFImageLoading
         public void SetPauseWork(bool pauseWork)
         {
             Scheduler.SetPauseWork(pauseWork);
+        }
+
+        /// <summary>
+        /// Gets a value indicating whether this ImageService will pause tasks execution.
+        /// </summary>
+        /// <value><c>true</c> if pause work; otherwise, <c>false</c>.</value>
+        public bool PauseWork
+        {
+            get
+            {
+                return Scheduler.PauseWork;
+            }
         }
 
         /// <summary>
