@@ -80,6 +80,8 @@ namespace FFImageLoading.Work
 
             ImageInformation.SetKey(Key, Parameters.CustomCacheKey);
             ImageInformation.SetPath(Parameters.Path);
+
+            Target?.SetImageLoadingTask(this);
         }
 
         public Configuration Configuration { get; private set; }
@@ -155,8 +157,10 @@ namespace FFImageLoading.Work
         protected void ThrowIfCancellationRequested()
         {
             try
-            {
+            {                
                 CancellationTokenSource?.Token.ThrowIfCancellationRequested();
+                if (!Target.IsTaskValid(this))
+                    throw new TaskCanceledException();
             }
             catch (ObjectDisposedException)
             {
@@ -199,7 +203,10 @@ namespace FFImageLoading.Work
 
         protected virtual void BeforeLoading(TImageContainer image, bool fromMemoryCache) { }
 
-        protected virtual void AfterLoading(TImageContainer image, bool fromMemoryCache) { }
+        protected virtual void AfterLoading(TImageContainer image, bool fromMemoryCache) 
+        { 
+            Target?.SetImageLoadingTask(null); 
+        }
 
         public async virtual Task<bool> TryLoadFromMemoryCacheAsync()
         {
@@ -214,8 +221,21 @@ namespace FFImageLoading.Work
                 if (result)
                 {
                     Logger.Debug(string.Format("Image loaded from cache: {0}", Key));
-                    Parameters?.OnSuccess?.Invoke(ImageInformation, LoadingResult.MemoryCache);
-                    Parameters?.OnFinish?.Invoke(this);
+
+                    if (Configuration.ExecuteCallbacksOnUIThread && (Parameters?.OnSuccess != null || Parameters?.OnFinish != null))
+                    {
+                        await MainThreadDispatcher.PostAsync(() =>
+                        {
+                            Parameters?.OnSuccess?.Invoke(ImageInformation, LoadingResult.MemoryCache);
+                            Parameters?.OnFinish?.Invoke(this);
+                        });
+                    }
+                    else
+                    {
+                        Parameters?.OnSuccess?.Invoke(ImageInformation, LoadingResult.MemoryCache);
+                        Parameters?.OnFinish?.Invoke(this);
+                    }
+
                     IsCompleted = true;
                 }
                 else
@@ -249,7 +269,18 @@ namespace FFImageLoading.Work
                 else
                 {
                     Logger.Error(string.Format("Image loading failed: {0}", Key), ex);
-                    Parameters?.OnError?.Invoke(ex);
+
+                    if (Configuration.ExecuteCallbacksOnUIThread && Parameters?.OnError != null)
+                    {
+                        await MainThreadDispatcher.PostAsync(() =>
+                        {
+                            Parameters?.OnError?.Invoke(ex);
+                        });
+                    }
+                    else
+                    {
+                        Parameters?.OnError?.Invoke(ex);
+                    }
                 }
             }
 
@@ -334,8 +365,19 @@ namespace FFImageLoading.Work
 
                             if (loadingResult == LoadingResult.Internet)
                                 Logger?.Debug(string.Format("DownloadOnly success: {0}", Key));
-                            
-                            Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
+
+                            if (Configuration.ExecuteCallbacksOnUIThread && Parameters?.OnSuccess != null)
+                            {
+                                await MainThreadDispatcher.PostAsync(() =>
+                                {
+                                    Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
+                                });
+                            }
+                            else
+                            {
+                                Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
+                            }
+
                             return;
                         }
 
@@ -362,7 +404,17 @@ namespace FFImageLoading.Work
                     }
                 }
 
-                Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
+                if (Configuration.ExecuteCallbacksOnUIThread && Parameters?.OnSuccess != null)
+                {
+                    await MainThreadDispatcher.PostAsync(() =>
+                    {
+                        Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
+                    });
+                }
+                else
+                {
+                    Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
+                }
             }
             catch (Exception ex)
             {
@@ -381,7 +433,18 @@ namespace FFImageLoading.Work
                 else
                 {
                     Logger.Error(string.Format("Image loading failed: {0}", Key), ex);
-                    Parameters?.OnError?.Invoke(ex);
+
+                    if (Configuration.ExecuteCallbacksOnUIThread && Parameters?.OnError != null)
+                    {
+                        await MainThreadDispatcher.PostAsync(() =>
+                        {
+                            Parameters?.OnError?.Invoke(ex);
+                        });
+                    }
+                    else
+                    {
+                        Parameters?.OnError?.Invoke(ex);
+                    }
 
                     try
                     {
@@ -405,7 +468,18 @@ namespace FFImageLoading.Work
             {
                 using (Parameters)
                 {
-                    Parameters?.OnFinish?.Invoke(this);
+                    if (Configuration.ExecuteCallbacksOnUIThread && Parameters?.OnFinish != null)
+                    {
+                        await MainThreadDispatcher.PostAsync(() =>
+                        {
+                            Parameters?.OnFinish?.Invoke(this);
+                        });
+                    }
+                    else
+                    {
+                        Parameters?.OnFinish?.Invoke(this);
+                    }
+
                     ImageService.RemovePendingTask(this);
                 }
 
@@ -420,6 +494,7 @@ namespace FFImageLoading.Work
             {
                 try
                 {
+                    Target?.SetImageLoadingTask(null);
                     Parameters?.Dispose();
                     CancellationTokenSource?.Dispose();
                 }

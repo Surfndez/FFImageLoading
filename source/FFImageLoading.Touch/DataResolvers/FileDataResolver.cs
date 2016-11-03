@@ -10,7 +10,7 @@ namespace FFImageLoading.DataResolvers
 {
 	public class FileDataResolver : IDataResolver
 	{
-        public Task<Tuple<Stream, LoadingResult, ImageInformation>> Resolve(string identifier, TaskParameter parameters, CancellationToken token)
+        public virtual Task<Tuple<Stream, LoadingResult, ImageInformation>> Resolve(string identifier, TaskParameter parameters, CancellationToken token)
         {
             string file = null;
 
@@ -23,16 +23,17 @@ namespace FFImageLoading.DataResolvers
 
                 while (scale > 1)
                 {
-                    file = string.Format(pattern, filename, scale, extension);
-                    if (FileStore.Exists(file))
+                    var tmpFile = string.Format(pattern, filename, scale, extension);
+                    if (FileStore.Exists(tmpFile))
                     {
-                        
+                        file = tmpFile;
+                        break;
                     }
                     scale--;
                 }
             }
 
-            if (FileStore.Exists(identifier))
+            if (string.IsNullOrEmpty(file) && FileStore.Exists(identifier))
             {
                 file = identifier;
             }

@@ -5,8 +5,7 @@ using Android.OS;
 using Android.Content.Res;
 using Android.Graphics;
 using System.IO;
-using System.Threading.Tasks;
-using System.Threading;
+using FFImageLoading.Work;
 
 namespace FFImageLoading.Drawables
 {
@@ -17,6 +16,7 @@ namespace FFImageLoading.Drawables
         bool animating;
         int alpha = 255;
         float fadeDuration = 200;
+        float normalized = 1f;
 
         public FFBitmapDrawable(Resources res, Bitmap bitmap) : base(res, bitmap)
         {
@@ -58,6 +58,7 @@ namespace FFImageLoading.Drawables
         {
             if (!animating)
             {
+                normalized = 0f;
                 alpha = 255;
                 fadeDuration = animationDuration;
                 startTimeMillis = SystemClock.UptimeMillis();
@@ -82,16 +83,17 @@ namespace FFImageLoading.Drawables
             {
                 if (!animating)
                 {
+                    normalized = 1f;
                     base.Draw(canvas);
                 }
                 else
                 {
-                    float normalized = (SystemClock.UptimeMillis() - startTimeMillis) / fadeDuration;
+                    normalized = (SystemClock.UptimeMillis() - startTimeMillis) / fadeDuration;
                     if (normalized >= 1f)
                     {
                         animating = false;
                         placeholder = null;
-                        normalized = 0f;
+                        normalized = 1f;
                         base.Draw(canvas);
                     }
                     else
@@ -123,7 +125,7 @@ namespace FFImageLoading.Drawables
             {
                 try
                 {
-                    if (animating && IsBitmapDrawableValid(placeholder))
+                    if (animating && normalized < 0.8f && IsBitmapDrawableValid(placeholder))
                     {
                         return placeholder.IntrinsicHeight;
                     }
@@ -140,7 +142,7 @@ namespace FFImageLoading.Drawables
             {
                 try
                 {
-                    if (animating && IsBitmapDrawableValid(placeholder))
+                    if (animating && normalized < 0.8f && IsBitmapDrawableValid(placeholder))
                     {
                         return placeholder.IntrinsicWidth;
                     }
