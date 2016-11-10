@@ -219,6 +219,7 @@ namespace FFImageLoading.Work
                 if (result)
                 {
                     Logger.Debug(string.Format("Image loaded from cache: {0}", Key));
+                    IsCompleted = true;
 
                     if (Configuration.ExecuteCallbacksOnUIThread && (Parameters?.OnSuccess != null || Parameters?.OnFinish != null))
                     {
@@ -233,8 +234,6 @@ namespace FFImageLoading.Work
                         Parameters?.OnSuccess?.Invoke(ImageInformation, LoadingResult.MemoryCache);
                         Parameters?.OnFinish?.Invoke(this);
                     }
-
-                    IsCompleted = true;
                 }
                 else
                 {
@@ -334,19 +333,21 @@ namespace FFImageLoading.Work
 
         public async Task RunAsync()
         {
+            LoadingResult loadingResult = LoadingResult.Failed;
+            bool success = false;
+
             try
             {
                 if (IsCompleted || IsCancelled || ImageService.ExitTasksEarly)
                     throw new OperationCanceledException();
 
                 ThrowIfCancellationRequested();
-                LoadingResult loadingResult = LoadingResult.Failed;
 
                 // LOAD IMAGE
                 if (!(await TryLoadFromMemoryCacheAsync().ConfigureAwait(false)))
                 {
                     Logger.Debug(string.Format("Generating/retrieving image: {0}", Key));
-                    var resolver = DataResolverFactory.GetResolver(Parameters.Path, Parameters.Source, Parameters, Configuration);
+                    var resolver = Parameters.CustomDataResolver ?? DataResolverFactory.GetResolver(Parameters.Path, Parameters.Source, Parameters, Configuration);
                     var imageData = await resolver.Resolve(Parameters.Path, Parameters, CancellationTokenSource.Token).ConfigureAwait(false);
                     loadingResult = imageData.Item2;
 
@@ -364,17 +365,7 @@ namespace FFImageLoading.Work
                             if (loadingResult == LoadingResult.Internet)
                                 Logger?.Debug(string.Format("DownloadOnly success: {0}", Key));
 
-                            if (Configuration.ExecuteCallbacksOnUIThread && Parameters?.OnSuccess != null)
-                            {
-                                await MainThreadDispatcher.PostAsync(() =>
-                                {
-                                    Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
-                                });
-                            }
-                            else
-                            {
-                                Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
-                            }
+                            success = true;
 
                             return;
                         }
@@ -402,25 +393,10 @@ namespace FFImageLoading.Work
                     }
                 }
 
-                if (Configuration.ExecuteCallbacksOnUIThread && Parameters?.OnSuccess != null)
-                {
-                    await MainThreadDispatcher.PostAsync(() =>
-                    {
-                        Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
-                    });
-                }
-                else
-                {
-                    Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
-                }
+                success = true;
             }
             catch (Exception ex)
             {
-                if (_clearCacheOnOutOfMemory && ex is OutOfMemoryException)
-                {
-                    MemoryCache.Clear();
-                }
-
                 if (ex is OperationCanceledException || ex is ObjectDisposedException)
                 {
                     if (Configuration.VerboseLoadingCancelledLogging)
@@ -430,6 +406,11 @@ namespace FFImageLoading.Work
                 }
                 else
                 {
+                    if (_clearCacheOnOutOfMemory && ex is OutOfMemoryException)
+                    {
+                        MemoryCache.Clear();
+                    }
+
                     Logger.Error(string.Format("Image loading failed: {0}", Key), ex);
 
                     if (Configuration.ExecuteCallbacksOnUIThread && Parameters?.OnError != null)
@@ -464,24 +445,28 @@ namespace FFImageLoading.Work
             }
             finally
             {
+                IsCompleted = true;
+
                 using (Parameters)
                 {
                     if (Configuration.ExecuteCallbacksOnUIThread && Parameters?.OnFinish != null)
                     {
                         await MainThreadDispatcher.PostAsync(() =>
                         {
+                            if (success)
+                                Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
                             Parameters?.OnFinish?.Invoke(this);
                         });
                     }
                     else
                     {
+                        if (success)
+                            Parameters?.OnSuccess?.Invoke(ImageInformation, loadingResult);
                         Parameters?.OnFinish?.Invoke(this);
                     }
 
                     ImageService.RemovePendingTask(this);
                 }
-
-                IsCompleted = true;
             }
         }
 
