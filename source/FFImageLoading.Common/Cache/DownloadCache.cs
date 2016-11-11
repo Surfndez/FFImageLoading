@@ -40,10 +40,13 @@ namespace FFImageLoading.Cache
                 var diskStream = await configuration.DiskCache.TryGetStreamAsync(filename).ConfigureAwait(false);
                 if (diskStream != null)
                 {
+                    token.ThrowIfCancellationRequested();
                     filePath = await configuration.DiskCache.GetFilePathAsync(filename).ConfigureAwait(false);
                     return new CacheStream(diskStream, true, filePath);
                 }
             }
+
+            token.ThrowIfCancellationRequested();
 
             var downloadInfo = new DownloadInformation(url, parameters.CustomCacheKey, filename, allowDiskCaching, duration);
             parameters.OnDownloadStarted?.Invoke(downloadInfo);
@@ -55,48 +58,65 @@ namespace FFImageLoading.Cache
                 () => configuration.Logger.Debug(string.Format("Retry download: {0}", url)));
 
             if (responseBytes == null)
-                return null;
-
-            var memoryStream = new MemoryStream(responseBytes, false);
+                throw new HttpRequestException("No Content");
 
             if (allowDiskCaching)
             {
                 await configuration.DiskCache.AddToSavingQueueIfNotExistsAsync(filename, responseBytes, duration).ConfigureAwait(false);
             }
 
+            token.ThrowIfCancellationRequested();
             filePath = await configuration.DiskCache.GetFilePathAsync(filename).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            var memoryStream = new MemoryStream(responseBytes, false);
             return new CacheStream(memoryStream, false, filePath);
         }
 
         protected virtual async Task<byte[]> DownloadAsync(string url, CancellationToken token, HttpClient client)
         {
-            try
+            using (var cancelHeadersToken = new CancellationTokenSource())
             {
-                using (var cancelHeadersToken = new CancellationTokenSource())
-                {
-                    cancelHeadersToken.CancelAfter(TimeSpan.FromSeconds(Configuration.HttpHeadersTimeout));
+                cancelHeadersToken.CancelAfter(TimeSpan.FromSeconds(Configuration.HttpHeadersTimeout));
 
-                    using (var linkedHeadersToken = CancellationTokenSource.CreateLinkedTokenSource(token, cancelHeadersToken.Token))
+                using (var linkedHeadersToken = CancellationTokenSource.CreateLinkedTokenSource(token, cancelHeadersToken.Token))
+                {
+                    try
                     {
                         using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, linkedHeadersToken.Token).ConfigureAwait(false))
                         {
-                            if (!response.IsSuccessStatusCode || response.Content == null)
-                                return null;
+                            if (!response.IsSuccessStatusCode)
+                                throw new HttpRequestException(response.StatusCode.ToString());
+
+                            if (response.Content == null)
+                                throw new HttpRequestException("No Content");
 
                             using (var cancelReadTimeoutToken = new CancellationTokenSource())
                             {
                                 cancelReadTimeoutToken.CancelAfter(TimeSpan.FromSeconds(Configuration.HttpReadTimeout));
 
-                                return await Task.Run(async () => await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false),
-                                                      cancelReadTimeoutToken.Token).ConfigureAwait(false);
+                                try
+                                {
+                                    return await Task.Run(async () => await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false), 
+                                                          cancelReadTimeoutToken.Token).ConfigureAwait(false);
+                                }
+                                catch (OperationCanceledException)
+                                {
+                                    if (cancelReadTimeoutToken.IsCancellationRequested)
+                                        throw new Exception("HttpReadTimeout");
+                                    else
+                                        throw;
+                                }
                             }
                         }
                     }
+                    catch (OperationCanceledException)
+                    {
+                        if (cancelHeadersToken.IsCancellationRequested)
+                            throw new Exception("HttpHeadersTimeout");
+                        else
+                            throw;
+                    }
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                throw new Exception("HttpHeadersTimeout");
             }
         }
 

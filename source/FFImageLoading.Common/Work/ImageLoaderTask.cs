@@ -9,7 +9,7 @@ using System.Linq;
 
 namespace FFImageLoading.Work
 {
-    public abstract class ImageLoaderTask<TImageContainer, TImageView> : IImageLoaderTask where TImageContainer: class where TImageView: class
+    public abstract class ImageLoaderTask<TImageContainer, TImageView> : IImageLoaderTask where TImageContainer : class where TImageView : class
     {
         bool isLoadingPlaceholderLoaded;
         static int _streamIndex;
@@ -47,8 +47,11 @@ namespace FFImageLoading.Work
                 KeyRaw = Parameters.CustomCacheKey;
             }
 
+            if (string.IsNullOrWhiteSpace(KeyRaw))
+                KeyRaw = Guid.NewGuid().ToString("N");
+
             KeyDownsamplingOnly = string.Empty;
-            if (Parameters.DownSampleSize != null)
+            if (Parameters.DownSampleSize != null && (Parameters.DownSampleSize.Item1 > 0 || Parameters.DownSampleSize.Item2 > 0))
             {
                 KeyDownsamplingOnly = string.Concat(";", Parameters.DownSampleSize.Item1, "x", Parameters.DownSampleSize.Item2);
             }
@@ -143,6 +146,8 @@ namespace FFImageLoading.Work
 
         protected string KeyForErrorPlaceholder { get; private set; }
 
+        protected WeakReference<TImageContainer> PlaceholderWeakReference { get; private set; }
+
         protected bool TransformPlaceholders
         {
             get
@@ -214,7 +219,7 @@ namespace FFImageLoading.Work
                     return false;
 
                 bool isFadeAnimationEnabledForCached = Parameters.FadeAnimationForCachedImagesEnabled.HasValue ? Parameters.FadeAnimationForCachedImagesEnabled.Value : Configuration.FadeAnimationForCachedImages;
-                var result = await TryLoadFromMemoryCacheAsync(Key, true, isFadeAnimationEnabledForCached).ConfigureAwait(false);
+                var result = await TryLoadFromMemoryCacheAsync(Key, true, isFadeAnimationEnabledForCached, false).ConfigureAwait(false);
 
                 if (result)
                 {
@@ -237,6 +242,7 @@ namespace FFImageLoading.Work
                 }
                 else
                 {
+                    ThrowIfCancellationRequested();
                     // Loading placeholder if enabled
                     if (!isLoadingPlaceholderLoaded && !string.IsNullOrWhiteSpace(Parameters.LoadingPlaceholderPath))
                     {
@@ -284,7 +290,7 @@ namespace FFImageLoading.Work
             return false;
         }
 
-        async Task<bool> TryLoadFromMemoryCacheAsync(string key, bool updateImageInformation, bool animated)
+        async Task<bool> TryLoadFromMemoryCacheAsync(string key, bool updateImageInformation, bool animated, bool isLoadingPlaceholder)
         {
             var found = MemoryCache.Get(key);
             if (found?.Item1 != null)
@@ -292,6 +298,9 @@ namespace FFImageLoading.Work
                 try
                 {
                     BeforeLoading(found.Item1, true);
+
+                    if (isLoadingPlaceholder)
+                        PlaceholderWeakReference = new WeakReference<TImageContainer>(found.Item1);
                     await SetTargetAsync(found.Item1, animated).ConfigureAwait(false);
 
                     if (updateImageInformation)
@@ -310,7 +319,7 @@ namespace FFImageLoading.Work
 
         protected virtual async Task ShowPlaceholder(string path, string key, ImageSource source, bool isLoadingPlaceholder)
         {
-            if (!await TryLoadFromMemoryCacheAsync(key, false, false).ConfigureAwait(false))
+            if (!await TryLoadFromMemoryCacheAsync(key, false, false, isLoadingPlaceholder).ConfigureAwait(false))
             {
                 var loadResolver = DataResolverFactory.GetResolver(path, source, Parameters, Configuration);
                 var loadImageData = await loadResolver.Resolve(path, Parameters, CancellationTokenSource.Token).ConfigureAwait(false);
@@ -326,6 +335,9 @@ namespace FFImageLoading.Work
 
                     ThrowIfCancellationRequested();
 
+                    if (isLoadingPlaceholder)
+                        PlaceholderWeakReference = new WeakReference<TImageContainer>(loadImage);
+                    
                     await SetTargetAsync(loadImage, false).ConfigureAwait(false);
                 }
             }
@@ -359,9 +371,6 @@ namespace FFImageLoading.Work
                         // Preload
                         if (Parameters.Preload && Parameters.CacheType.HasValue && Parameters.CacheType.Value == CacheType.Disk)
                         {
-                            if (Parameters.Source != ImageSource.Url)
-                                throw new InvalidOperationException("DownloadOnly: Only Url ImageSource is supported.");
-
                             if (loadingResult == LoadingResult.Internet)
                                 Logger?.Debug(string.Format("DownloadOnly success: {0}", Key));
 
