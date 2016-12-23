@@ -89,7 +89,7 @@ namespace FFImageLoading
 
             TaskParameter imageLoader = null;
 
-            var ffSource = await FFImageSourceBinding.GetImageSourceBinding(Source);
+            var ffSource = await FFImageSourceBinding.GetImageSourceBinding(Source).ConfigureAwait(false);
 
             if (ffSource == null)
             {
@@ -147,35 +147,39 @@ namespace FFImageLoading
                 {
                     if (Height > Width)
                     {
-                        imageLoader.DownSample(height: Height.PointsToPixels());
+                        imageLoader.DownSampleInDip(height: (int)Height);
                     }
                     else
                     {
-                        imageLoader.DownSample(width: Width.PointsToPixels());
+                        imageLoader.DownSampleInDip(width: (int)Width);
                     }
                 }
                 else if (DownsampleToViewSize && (MinWidth > 0 || MinHeight > 0))
                 {
                     if (MinHeight > MinWidth)
                     {
-                        imageLoader.DownSample(height: MinHeight.PointsToPixels());
+                        imageLoader.DownSampleInDip(height: (int)MinHeight);
                     }
                     else
                     {
-                        imageLoader.DownSample(width: MinWidth.PointsToPixels());
+                        imageLoader.DownSampleInDip(width: (int)MinWidth);
                     }
                 }
                 else if ((int)DownsampleHeight != 0 || (int)DownsampleWidth != 0)
                 {
                     if (DownsampleHeight > DownsampleWidth)
                     {
-                        imageLoader.DownSample(height: DownsampleUseDipUnits
-                            ? DownsampleHeight.PointsToPixels() : (int)DownsampleHeight);
+                        if (DownsampleUseDipUnits)
+                            imageLoader.DownSampleInDip(height: (int)DownsampleHeight);
+                        else
+                            imageLoader.DownSample(height: (int)DownsampleHeight);
                     }
                     else
                     {
-                        imageLoader.DownSample(width: DownsampleUseDipUnits
-                            ? DownsampleWidth.PointsToPixels() : (int)DownsampleWidth);
+                        if (DownsampleUseDipUnits)
+                            imageLoader.DownSampleInDip(width: (int)DownsampleWidth);
+                        else
+                            imageLoader.DownSample(width: (int)DownsampleWidth);
                     }
                 }
 
@@ -380,7 +384,7 @@ namespace FFImageLoading
         /// <summary>
         /// The cache duration property.
         /// </summary>
-        public static readonly DependencyProperty CacheDurationProperty = DependencyProperty.Register(nameof(CacheDuration), typeof(int), typeof(FFImage), new PropertyMetadata(30));
+        public static readonly DependencyProperty CacheDurationProperty = DependencyProperty.Register(nameof(CacheDuration), typeof(int), typeof(FFImage), new PropertyMetadata(ImageService.Instance.Config.DiskCacheDuration.Days));
 
         /// <summary>
         /// How long the file will be cached on disk.

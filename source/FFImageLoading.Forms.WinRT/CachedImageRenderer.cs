@@ -205,19 +205,14 @@ namespace FFImageLoading.Forms.WinRT
 
         private async void UpdateSource()
         {
-            ((Xamarin.Forms.IElementController)Element).SetValueFromRenderer(CachedImage.IsLoadingPropertyKey, true);
+            Element.SetIsLoading(true);
 
-            Xamarin.Forms.ImageSource source = null;
-			var vectorSource = Element.Source as IVectorImageSource;
-			if (vectorSource != null)
-				source = vectorSource.ImageSource;
-			else
-				source = Element.Source;
+            Xamarin.Forms.ImageSource source = Element.Source;
 
             Cancel();
             TaskParameter imageLoader = null;
 
-            var ffSource = await ImageSourceBinding.GetImageSourceBinding(source).ConfigureAwait(false);
+            var ffSource = await ImageSourceBinding.GetImageSourceBinding(source, Element).ConfigureAwait(false);
 
             if (ffSource == null)
             {
@@ -256,39 +251,10 @@ namespace FFImageLoading.Forms.WinRT
 					imageLoader.CacheKey(Element.CacheKeyFactory.GetKey(source, bindingContext));
 				}
 
-				// CustomDataResolver
-				if (Element.CustomDataResolver != null)
-				{
-					imageLoader.WithCustomDataResolver(Element.CustomDataResolver);
-				}
-				else if (vectorSource != null)
-				{
-					if (vectorSource.VectorHeight == 0 && vectorSource.VectorWidth == 0)
-					{
-						if (Element.Height > 0d)
-						{
-							vectorSource.UseDipUnits = true;
-							vectorSource.VectorHeight = (int)Element.Height;
-						}
-						else if (Element.Width > 0d)
-						{
-							vectorSource.UseDipUnits = true;
-							vectorSource.VectorWidth = (int)Element.Width;
-						}
-						else
-						{
-							vectorSource.UseDipUnits = false;
-							vectorSource.VectorHeight = 200;
-						}
-					}
-
-					imageLoader.WithCustomDataResolver(vectorSource.GetVectorDataResolver());
-				}
-
                 // LoadingPlaceholder
                 if (Element.LoadingPlaceholder != null)
                 {
-                    var placeholderSource = await ImageSourceBinding.GetImageSourceBinding(Element.LoadingPlaceholder).ConfigureAwait(false);
+					var placeholderSource = await ImageSourceBinding.GetImageSourceBinding(Element.LoadingPlaceholder, Element).ConfigureAwait(false);
                     if (placeholderSource != null)
                         imageLoader.LoadingPlaceholder(placeholderSource.Path, placeholderSource.ImageSource);
                 }
@@ -296,47 +262,74 @@ namespace FFImageLoading.Forms.WinRT
                 // ErrorPlaceholder
                 if (Element.ErrorPlaceholder != null)
                 {
-                    var placeholderSource = await ImageSourceBinding.GetImageSourceBinding(Element.ErrorPlaceholder).ConfigureAwait(false);
+					var placeholderSource = await ImageSourceBinding.GetImageSourceBinding(Element.ErrorPlaceholder, Element).ConfigureAwait(false);
                     if (placeholderSource != null)
                         imageLoader.ErrorPlaceholder(placeholderSource.Path, placeholderSource.ImageSource);
                 }
 
-                // Downsample
-                if (Element.DownsampleToViewSize && (Element.Width > 0 || Element.Height > 0))
-                {
-                    if (Element.Height > Element.Width)
-                    {
-                        imageLoader.DownSample(height: Element.Height.PointsToPixels());
-                    }
-                    else
-                    {
-                        imageLoader.DownSample(width: Element.Width.PointsToPixels());
-                    }
-                }
-                else if (Element.DownsampleToViewSize && (Element.WidthRequest > 0 || Element.HeightRequest > 0))
-                {
-                    if (Element.HeightRequest > Element.WidthRequest)
-                    {
-                        imageLoader.DownSample(height: Element.HeightRequest.PointsToPixels());
-                    }
-                    else
-                    {
-                        imageLoader.DownSample(width: Element.WidthRequest.PointsToPixels());
-                    }
-                }
-                else if ((int)Element.DownsampleHeight != 0 || (int)Element.DownsampleWidth != 0)
-                {
-                    if (Element.DownsampleHeight > Element.DownsampleWidth)
-                    {
-                        imageLoader.DownSample(height: Element.DownsampleUseDipUnits
-                            ? Element.DownsampleHeight.PointsToPixels() : (int)Element.DownsampleHeight);
-                    }
-                    else
-                    {
-                        imageLoader.DownSample(width: Element.DownsampleUseDipUnits
-                            ? Element.DownsampleWidth.PointsToPixels() : (int)Element.DownsampleWidth);
-                    }
-                }
+				// Enable vector image source
+				var vect1 = Element.Source as IVectorImageSource;
+				var vect2 = Element.LoadingPlaceholder as IVectorImageSource;
+				var vect3 = Element.ErrorPlaceholder as IVectorImageSource;
+				if (vect1 != null)
+				{
+					imageLoader.WithCustomDataResolver(vect1.GetVectorDataResolver());
+				}
+				if (vect2 != null)
+				{
+					imageLoader.WithCustomLoadingPlaceholderDataResolver(vect2.GetVectorDataResolver());
+				}
+				if (vect3 != null)
+				{
+					imageLoader.WithCustomErrorPlaceholderDataResolver(vect3.GetVectorDataResolver());
+				}
+				if (Element.CustomDataResolver != null)
+				{
+					imageLoader.WithCustomDataResolver(Element.CustomDataResolver);
+					imageLoader.WithCustomLoadingPlaceholderDataResolver(Element.CustomDataResolver);
+					imageLoader.WithCustomErrorPlaceholderDataResolver(Element.CustomDataResolver);
+				}
+
+				// Downsample
+				if (Element.DownsampleToViewSize && (Element.Width > 0 || Element.Height > 0))
+				{
+					if (Element.Height > Element.Width)
+					{
+						imageLoader.DownSampleInDip(height: (int)Element.Height);
+					}
+					else
+					{
+						imageLoader.DownSampleInDip(width: (int)Element.Width);
+					}
+				}
+				else if (Element.DownsampleToViewSize && (Element.WidthRequest > 0 || Element.HeightRequest > 0))
+				{
+					if (Element.HeightRequest > Element.WidthRequest)
+					{
+						imageLoader.DownSampleInDip(height: (int)Element.HeightRequest);
+					}
+					else
+					{
+						imageLoader.DownSampleInDip(width: (int)Element.WidthRequest);
+					}
+				}
+				else if ((int)Element.DownsampleHeight != 0 || (int)Element.DownsampleWidth != 0)
+				{
+					if (Element.DownsampleHeight > Element.DownsampleWidth)
+					{
+						if (Element.DownsampleUseDipUnits)
+							imageLoader.DownSampleInDip(height: (int)Element.DownsampleHeight);
+						else
+							imageLoader.DownSample(height: (int)Element.DownsampleHeight);
+					}
+					else
+					{
+						if (Element.DownsampleUseDipUnits)
+							imageLoader.DownSampleInDip(width: (int)Element.DownsampleWidth);
+						else
+							imageLoader.DownSample(width: (int)Element.DownsampleWidth);
+					}
+				}
 
                 // RetryCount
                 if (Element.RetryCount > 0)
@@ -389,6 +382,12 @@ namespace FFImageLoading.Forms.WinRT
 				imageLoader.DownloadStarted((downloadInformation) =>
 					element.OnDownloadStarted(new CachedImageEvents.DownloadStartedEventArgs(downloadInformation)));
 
+				imageLoader.DownloadProgress((progress) =>
+					element.OnDownloadProgress(new CachedImageEvents.DownloadProgressEventArgs(progress)));
+
+				imageLoader.FileWriteFinished((fileWriteInfo) =>
+					element.OnFileWriteFinished(new CachedImageEvents.FileWriteFinishedEventArgs(fileWriteInfo)));
+
                 _currentTask = imageLoader.Into(Control);
             }
         }
@@ -418,9 +417,10 @@ namespace FFImageLoading.Forms.WinRT
             	if (element != null && !_isDisposed)
 				{
 					var elCtrl = element as Xamarin.Forms.IVisualElementController;
+					element.SetIsLoading(false);
+
 					if (elCtrl != null)
 					{
-						elCtrl.SetValueFromRenderer(CachedImage.IsLoadingPropertyKey, false);
 						//elCtrl.NativeSizeChanged();
 						HackInvalidateMeasure(element);
 					}
@@ -433,13 +433,14 @@ namespace FFImageLoading.Forms.WinRT
 			UpdateSource();
 		}
 
-        private void Cancel()
-        {
-            if (_currentTask != null && !_currentTask.IsCancelled)
-            {
-                _currentTask.Cancel();
-            }
-        }
+		private void Cancel()
+		{
+			var taskToCancel = _currentTask;
+			if (taskToCancel != null && !taskToCancel.IsCancelled)
+			{
+				taskToCancel.Cancel();
+			}
+		}
 
 		private Task<byte[]> GetImageAsJpgAsync(GetImageAsJpgArgs args)
         {

@@ -110,15 +110,10 @@ namespace FFImageLoading.Forms.Touch
 
 		private void SetImage(CachedImage oldElement = null)
 		{
-			Xamarin.Forms.ImageSource source = null;
-			var vectorSource = Element.Source as IVectorImageSource;
-			if (vectorSource != null)
-				source = vectorSource.ImageSource;
-			else
-				source = Element.Source;
-			
-			var ffSource = ImageSourceBinding.GetImageSourceBinding(source);
-			var placeholderSource = ImageSourceBinding.GetImageSourceBinding(Element.LoadingPlaceholder);
+			Xamarin.Forms.ImageSource source = Element.Source;
+
+			var ffSource = ImageSourceBinding.GetImageSourceBinding(source, Element);
+			var placeholderSource = ImageSourceBinding.GetImageSourceBinding(Element.LoadingPlaceholder, Element);
 
 			if (oldElement != null && _lastImageSource != null && ffSource != null && !ffSource.Equals(_lastImageSource)
 				&& (string.IsNullOrWhiteSpace(placeholderSource?.Path) || placeholderSource?.Stream != null))
@@ -127,7 +122,7 @@ namespace FFImageLoading.Forms.Touch
 				Control.Image = null;
 			}
 
-			((IElementController)Element).SetValueFromRenderer(CachedImage.IsLoadingPropertyKey, true);
+			Element.SetIsLoading(true);
 
 			Cancel();
 			TaskParameter imageLoader = null;
@@ -169,35 +164,6 @@ namespace FFImageLoading.Forms.Touch
 					imageLoader.CacheKey(Element.CacheKeyFactory.GetKey(source, bindingContext));
 				}
 
-				// CustomDataResolver
-				if (Element.CustomDataResolver != null)
-				{
-					imageLoader.WithCustomDataResolver(Element.CustomDataResolver);
-				}
-				else if (vectorSource != null)
-				{
-					if (vectorSource.VectorHeight == 0 && vectorSource.VectorWidth == 0)
-					{
-						if (Element.Height > 0d)
-						{
-							vectorSource.UseDipUnits = true;
-							vectorSource.VectorHeight = (int)Element.Height;
-						}
-						else if (Element.Width > 0d)
-						{
-							vectorSource.UseDipUnits = true;
-							vectorSource.VectorWidth = (int)Element.Width;
-						}
-						else
-						{
-							vectorSource.UseDipUnits = false;
-							vectorSource.VectorHeight = 200;
-						}
-					}
-
-					imageLoader.WithCustomDataResolver(vectorSource.GetVectorDataResolver());
-				}
-
 				// LoadingPlaceholder
 				if (Element.LoadingPlaceholder != null)
 				{
@@ -208,9 +174,32 @@ namespace FFImageLoading.Forms.Touch
 				// ErrorPlaceholder
 				if (Element.ErrorPlaceholder != null)
 				{
-					var errorPlaceholderSource = ImageSourceBinding.GetImageSourceBinding(Element.ErrorPlaceholder);
+					var errorPlaceholderSource = ImageSourceBinding.GetImageSourceBinding(Element.ErrorPlaceholder, Element);
 					if (errorPlaceholderSource != null)
 						imageLoader.ErrorPlaceholder(errorPlaceholderSource.Path, errorPlaceholderSource.ImageSource);
+				}
+
+				// Enable vector image source
+				var vect1 = Element.Source as IVectorImageSource;
+				var vect2 = Element.LoadingPlaceholder as IVectorImageSource;
+				var vect3 = Element.ErrorPlaceholder as IVectorImageSource;
+				if (vect1 != null)
+				{
+					imageLoader.WithCustomDataResolver(vect1.GetVectorDataResolver());
+				}
+				if (vect2 != null)
+				{
+					imageLoader.WithCustomLoadingPlaceholderDataResolver(vect2.GetVectorDataResolver());
+				}
+				if (vect3 != null)
+				{
+					imageLoader.WithCustomErrorPlaceholderDataResolver(vect3.GetVectorDataResolver());
+				}
+				if (Element.CustomDataResolver != null)
+				{
+					imageLoader.WithCustomDataResolver(Element.CustomDataResolver);
+					imageLoader.WithCustomLoadingPlaceholderDataResolver(Element.CustomDataResolver);
+					imageLoader.WithCustomErrorPlaceholderDataResolver(Element.CustomDataResolver);
 				}
 
 				// Downsample
@@ -218,35 +207,39 @@ namespace FFImageLoading.Forms.Touch
 				{
 					if (Element.Height > Element.Width)
 					{
-						imageLoader.DownSample(height: Element.Height.PointsToPixels());
+						imageLoader.DownSampleInDip(height: (int)Element.Height);
 					}
 					else
 					{
-						imageLoader.DownSample(width: Element.Width.PointsToPixels());
+						imageLoader.DownSampleInDip(width: (int)Element.Width);
 					}
 				}
 				else if (Element.DownsampleToViewSize && (Element.WidthRequest > 0 || Element.HeightRequest > 0))
 				{
 					if (Element.HeightRequest > Element.WidthRequest)
 					{
-						imageLoader.DownSample(height: Element.HeightRequest.PointsToPixels());
+						imageLoader.DownSampleInDip(height: (int)Element.HeightRequest);
 					}
 					else
 					{
-						imageLoader.DownSample(width: Element.WidthRequest.PointsToPixels());
+						imageLoader.DownSampleInDip(width: (int)Element.WidthRequest);
 					}
 				}
 				else if ((int)Element.DownsampleHeight != 0 || (int)Element.DownsampleWidth != 0)
 				{
 					if (Element.DownsampleHeight > Element.DownsampleWidth)
 					{
-						imageLoader.DownSample(height: Element.DownsampleUseDipUnits 
-							? Element.DownsampleHeight.PointsToPixels() : (int)Element.DownsampleHeight);
+						if (Element.DownsampleUseDipUnits)
+							imageLoader.DownSampleInDip(height: (int)Element.DownsampleHeight);
+						else
+							imageLoader.DownSample(height: (int)Element.DownsampleHeight);
 					}
 					else
 					{
-						imageLoader.DownSample(width: Element.DownsampleUseDipUnits 
-							? Element.DownsampleWidth.PointsToPixels() : (int)Element.DownsampleWidth);
+						if (Element.DownsampleUseDipUnits)
+							imageLoader.DownSampleInDip(width: (int)Element.DownsampleWidth);
+						else
+							imageLoader.DownSample(width: (int)Element.DownsampleWidth);
 					}
 				}
 
@@ -302,6 +295,12 @@ namespace FFImageLoading.Forms.Touch
 
 				imageLoader.DownloadStarted((downloadInformation) =>
 					element.OnDownloadStarted(new CachedImageEvents.DownloadStartedEventArgs(downloadInformation)));
+
+				imageLoader.DownloadProgress((progress) =>
+					element.OnDownloadProgress(new CachedImageEvents.DownloadProgressEventArgs(progress)));
+
+				imageLoader.FileWriteFinished((fileWriteInfo) =>
+					element.OnFileWriteFinished(new CachedImageEvents.FileWriteFinishedEventArgs(fileWriteInfo)));
 				
 				_currentTask = imageLoader.Into(Control);	
 			}
@@ -313,7 +312,7 @@ namespace FFImageLoading.Forms.Touch
 			{
 				if (element != null && !_isDisposed)
 				{
-					((IElementController)element).SetValueFromRenderer(CachedImage.IsLoadingPropertyKey, false);
+					element.SetIsLoading(false);
 					((IVisualElementController)element).NativeSizeChanged();
 				}
 			});
@@ -326,9 +325,10 @@ namespace FFImageLoading.Forms.Touch
 
 		private void Cancel()
 		{
-			if (_currentTask != null && !_currentTask.IsCancelled) 
+			var taskToCancel = _currentTask;
+			if (taskToCancel != null && !taskToCancel.IsCancelled)
 			{
-				_currentTask.Cancel ();
+				taskToCancel.Cancel();
 			}
 		}
 			
@@ -349,7 +349,7 @@ namespace FFImageLoading.Forms.Touch
 			await MainThreadDispatcher.Instance.PostAsync(() => {
 				if (Control != null)
 					image = Control.Image;
-			});
+			}).ConfigureAwait(false);
 
 			if (image == null)
 				return null;

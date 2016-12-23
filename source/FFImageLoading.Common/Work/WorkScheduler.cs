@@ -235,10 +235,6 @@ namespace FFImageLoading.Work
                     Interlocked.Increment(ref _statsTotalPending);
                     PendingTasks.Add(currentPendingTask);
                 }
-                else
-                {
-                    similarRunningTask.Position = position;
-                }
             }
 
             if (PauseWork)
@@ -258,7 +254,9 @@ namespace FFImageLoading.Work
         {
             Interlocked.Increment(ref _statsTotalWaiting);
 
-            if (taskForSimilarKey.FrameworkWrappingTask == null)
+            if (taskForSimilarKey?.FrameworkWrappingTask == null 
+                || taskForSimilarKey.FrameworkWrappingTask.IsCanceled 
+                || taskForSimilarKey.FrameworkWrappingTask.IsFaulted)
             {
                 lock (_pendingTasksLock)
                 {
@@ -273,10 +271,17 @@ namespace FFImageLoading.Work
             Logger.Debug(string.Format("Wait for similar request for key: {0}", taskForSimilarKey.ImageLoadingTask.Key));
             await taskForSimilarKey.FrameworkWrappingTask.ConfigureAwait(false);
 
+            if (currentPendingTask?.ImageLoadingTask == null || currentPendingTask.ImageLoadingTask.IsCancelled)
+                return;
+
             // Now our image should be in the cache
             var cacheFound = await currentPendingTask.ImageLoadingTask.TryLoadFromMemoryCacheAsync().ConfigureAwait(false);
+
             if (!cacheFound)
             {
+                if (currentPendingTask?.ImageLoadingTask == null || currentPendingTask.ImageLoadingTask.IsCancelled)
+                    return;
+                
                 lock (_pendingTasksLock)
                 {
                     Interlocked.Increment(ref _statsTotalPending);
@@ -391,17 +396,17 @@ namespace FFImageLoading.Work
             {
                 if (tasksToRun.Count == 1)
                 {
-                    await RunImageLoadingTaskAsync(tasksToRun.Values.First(), false).ConfigureAwait(false);
+                    await RunImageLoadingTaskAsync(tasksToRun.Values.First()).ConfigureAwait(false);
                 }
                 else
                 {
-                    var tasks = tasksToRun.Select(p => RunImageLoadingTaskAsync(p.Value, true));
+                    var tasks = tasksToRun.Select(p => RunImageLoadingTaskAsync(p.Value));
                     await Task.WhenAll(tasks).ConfigureAwait(false);
                 } 
             }
         }
 
-        protected async Task RunImageLoadingTaskAsync(PendingTask pendingTask, bool scheduleOnThreadPool)
+        protected async Task RunImageLoadingTaskAsync(PendingTask pendingTask)
         {
             var key = pendingTask.ImageLoadingTask.Key;
 
@@ -421,34 +426,19 @@ namespace FFImageLoading.Work
                     LogSchedulerStats();
                     Stopwatch stopwatch = Stopwatch.StartNew();
 
-                    if (scheduleOnThreadPool)
-                    {
-                        await Task.Run(pendingTask.ImageLoadingTask.RunAsync).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await pendingTask.ImageLoadingTask.RunAsync().ConfigureAwait(false);
-                    }
+                    await Task.Run(pendingTask.ImageLoadingTask.RunAsync).ConfigureAwait(false);
 
                     stopwatch.Stop();
 
-                    Logger.Debug(string.Format("[PERFORMANCE] RunAsync - NetManagedThreadId: {0}, NativeThreadId: {1}, Execution: {2} ms, ThreadPool: {3}, Key: {4}",
+                    Logger.Debug(string.Format("[PERFORMANCE] RunAsync - NetManagedThreadId: {0}, NativeThreadId: {1}, Execution: {2} ms, Key: {3}",
                                                 Performance.GetCurrentManagedThreadId(),
                                                 Performance.GetCurrentSystemThreadId(),
                                                 stopwatch.Elapsed.Milliseconds,
-                                                scheduleOnThreadPool,
                                                 key));
                 }
                 else
                 {
-                    if (scheduleOnThreadPool)
-                    {
-                        await Task.Run(pendingTask.ImageLoadingTask.RunAsync).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await pendingTask.ImageLoadingTask.RunAsync().ConfigureAwait(false);
-                    }
+                    await Task.Run(pendingTask.ImageLoadingTask.RunAsync).ConfigureAwait(false);
                 }
             }
             finally

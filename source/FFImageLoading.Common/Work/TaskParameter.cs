@@ -111,6 +111,10 @@ namespace FFImageLoading.Work
 
         public Action<DownloadInformation> OnDownloadStarted { get; private set; }
 
+        public Action<FileWriteInfo> OnFileWriteFinished { get; private set; }
+
+        public Action<DownloadProgress> OnDownloadProgress { get; private set; }
+
 		public List<ITransformation> Transformations { get; private set; }
 
         [Obsolete("Use BitmapOptimizations")]
@@ -121,6 +125,10 @@ namespace FFImageLoading.Work
 		public bool? FadeAnimationEnabled { get; private set; }
 
         public IDataResolver CustomDataResolver { get; private set; }
+
+        public IDataResolver CustomErrorPlaceholderDataResolver { get; private set; }
+
+        public IDataResolver CustomLoadingPlaceholderDataResolver { get; private set; }
 
 		public bool? FadeAnimationForCachedImagesEnabled { get; private set; }
 
@@ -242,21 +250,21 @@ namespace FFImageLoading.Work
         /// </summary>
         /// <returns>The custom resolver.</returns>
         /// <param name="resolver">Resolver.</param>
-        public TaskParameter WithCustomDataResolver(IDataResolver resolver)
+        public TaskParameter WithCustomDataResolver(IDataResolver resolver = null)
         {
             CustomDataResolver = resolver;
+            return this;
+        }
 
-            var vectorResolver = resolver as IVectorDataResolver;
-            if (vectorResolver != null && string.IsNullOrWhiteSpace(CustomCacheKey))
-            {
-                CacheKey(string.Format("{0};{4}(size={1}x{2},dip={3})", 
-                                       Path, 
-                                       vectorResolver.VectorWidth, 
-                                       vectorResolver.VectorHeight, 
-                                       vectorResolver.UseDipUnits,
-                                       resolver.GetType()?.Name ?? "Vector"));
-            }
+        public TaskParameter WithCustomLoadingPlaceholderDataResolver(IDataResolver resolver = null)
+        {
+            CustomLoadingPlaceholderDataResolver = resolver;
+            return this;
+        }
 
+        public TaskParameter WithCustomErrorPlaceholderDataResolver(IDataResolver resolver = null)
+        {
+            CustomErrorPlaceholderDataResolver = resolver;
             return this;
         }
 
@@ -423,6 +431,34 @@ namespace FFImageLoading.Work
                 throw new Exception("Given lambda should not be null.");
 
             OnDownloadStarted = action;
+            return this;
+        }
+
+        /// <summary>
+        /// This callback can be used for reading download progress
+        /// </summary>
+        /// <returns>The progress.</returns>
+        /// <param name="action">Action.</param>
+        public TaskParameter DownloadProgress(Action<DownloadProgress> action)
+        {
+            if (action == null)
+                throw new Exception("Given lambda should not be null.");
+
+            OnDownloadProgress = action;
+            return this;
+        }
+
+        /// <summary>
+        /// Called after file is succesfully written to the disk
+        /// </summary>
+        /// <returns>The write ended.</returns>
+        /// <param name="action">Action.</param>
+        public TaskParameter FileWriteFinished(Action<FileWriteInfo> action)
+        {
+            if (action == null)
+                throw new Exception("Given lambda should not be null.");
+
+            OnFileWriteFinished = action;
             return this;
         }
 

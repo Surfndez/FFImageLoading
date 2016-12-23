@@ -8,18 +8,19 @@ namespace FFImageLoading.Svg.Platform
 {
 	public class SvgDataResolver : IVectorDataResolver
 	{
-		const string DoNotReference = "You are referencing the Portable version in your App - you need to reference the platform version";
-
-		public SvgDataResolver(int vectorWidth, int vectorHeight, bool useDipUnits)
+		public static string DoNotReferenceMessage
 		{
-			throw new Exception(DoNotReference);
+			get
+			{
+				return "You are referencing the Portable version in your App - you need to reference the platform specific version";
+			}
 		}
 
 		public bool UseDipUnits
 		{
 			get
 			{
-				throw new Exception(DoNotReference);
+				throw new Exception(DoNotReferenceMessage);
 			}
 		}
 
@@ -27,7 +28,7 @@ namespace FFImageLoading.Svg.Platform
 		{
 			get
 			{
-				throw new Exception(DoNotReference);
+				throw new Exception(DoNotReferenceMessage);
 			}
 		}
 
@@ -35,13 +36,13 @@ namespace FFImageLoading.Svg.Platform
 		{
 			get
 			{
-				throw new Exception(DoNotReference);
+				throw new Exception(DoNotReferenceMessage);
 			}
 		}
 
 		public Task<Tuple<Stream, LoadingResult, ImageInformation>> Resolve(string identifier, TaskParameter parameters, CancellationToken token)
 		{
-			throw new Exception(DoNotReference);
+			throw new Exception(DoNotReferenceMessage);
 		}
 	}
 }

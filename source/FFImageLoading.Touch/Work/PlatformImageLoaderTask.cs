@@ -20,9 +20,7 @@ namespace FFImageLoading.Work
             : base(ImageCache.Instance, configuration.DataResolverFactory ?? DataResolvers.DataResolverFactory.Instance, target, parameters, imageService, configuration, mainThreadDispatcher, true)
         {
             // do not remove! Kicks scale retrieval so it's available for all, without deadlocks due to accessing MainThread
-            #pragma warning disable 0219
-            var ignore = ScaleHelper.Scale;
-            #pragma warning restore 0219
+            ScaleHelper.Init();
         }
 
         protected override Task SetTargetAsync(UIImage image, bool animated)
@@ -110,6 +108,11 @@ namespace FFImageLoading.Work
             }
 
             return imageIn;
+        }
+
+        protected override int DpiToPixels(int size)
+        {
+            return size.PointsToPixels();
         }
     }
 }

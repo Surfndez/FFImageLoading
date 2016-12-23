@@ -1,8 +1,8 @@
 ﻿using System;
 using System.IO;
+using System.Reflection;
 using FFImageLoading.Forms;
 using FFImageLoading.Work;
-using FFImageLoading.Svg.Platform;
 
 namespace FFImageLoading.Svg.Forms
 {
@@ -11,9 +11,11 @@ namespace FFImageLoading.Svg.Forms
 	/// </summary>
 	public class SvgImageSource : Xamarin.Forms.ImageSource, IVectorImageSource
 	{
+		const string DoNotReference = "You are referencing the Portable version in your App - you need to reference the platform version";
+
 		public SvgImageSource(Xamarin.Forms.ImageSource imageSource, int vectorWidth, int vectorHeight, bool useDipUnits)
 		{
-			ImageSource = imageSource;
+			throw new Exception(DoNotReference);
 		}
 
 		public Xamarin.Forms.ImageSource ImageSource { get; private set; }
@@ -26,7 +28,7 @@ namespace FFImageLoading.Svg.Forms
 
 		public IVectorDataResolver GetVectorDataResolver()
 		{
-			return new SvgDataResolver(VectorWidth, VectorHeight, UseDipUnits);
+			throw new Exception(DoNotReference);
 		}
 
 		/// <summary>
@@ -40,7 +42,7 @@ namespace FFImageLoading.Svg.Forms
 		/// <param name="useDipUnits">If set to <c>true</c> use dip units.</param>
 		public static SvgImageSource FromFile(string file, int vectorWidth = 0, int vectorHeight = 0, bool useDipUnits = true)
 		{
-			return new SvgImageSource(Xamarin.Forms.ImageSource.FromFile(file), vectorWidth, vectorHeight, useDipUnits);
+			throw new Exception(DoNotReference);
 		}
 
 		/// <summary>
@@ -54,7 +56,7 @@ namespace FFImageLoading.Svg.Forms
 		/// <param name="useDipUnits">If set to <c>true</c> use dip units.</param>
 		public static SvgImageSource FromStream(Func<Stream> stream, int vectorWidth = 0, int vectorHeight = 0, bool useDipUnits = true)
 		{
-			return new SvgImageSource(Xamarin.Forms.ImageSource.FromStream(stream), vectorWidth, vectorHeight, useDipUnits);
+			throw new Exception(DoNotReference);
 		}
 
 		/// <summary>
@@ -68,7 +70,17 @@ namespace FFImageLoading.Svg.Forms
 		/// <param name="useDipUnits">If set to <c>true</c> use dip units.</param>
 		public static SvgImageSource FromUri(Uri uri, int vectorWidth = 0, int vectorHeight = 0, bool useDipUnits = true)
 		{
-			return new SvgImageSource(Xamarin.Forms.ImageSource.FromUri(uri), vectorWidth, vectorHeight, useDipUnits);
+			throw new Exception(DoNotReference);
+		}
+
+		public static ImageSource FromResource(string resource, Type resolvingType, int vectorWidth = 0, int vectorHeight = 0, bool useDipUnits = true)
+		{
+			throw new Exception(DoNotReference);
+		}
+
+		public static ImageSource FromResource(string resource, Assembly sourceAssembly = null, int vectorWidth = 0, int vectorHeight = 0, bool useDipUnits = true)
+		{
+			throw new Exception(DoNotReference);
 		}
 	}
 }
