@@ -11,7 +11,7 @@ namespace FFImageLoading.Work
 {
     public abstract class ImageLoaderTask<TImageContainer, TImageView> : IImageLoaderTask where TImageContainer : class where TImageView : class
     {
-        bool isLoadingPlaceholderLoaded;
+        bool _isLoadingPlaceholderLoaded;
         static int _streamIndex;
         static int GetNextStreamIndex()
         {
@@ -273,12 +273,10 @@ namespace FFImageLoading.Work
                 {
                     ThrowIfCancellationRequested();
                     // Loading placeholder if enabled
-                    if (!isLoadingPlaceholderLoaded && !string.IsNullOrWhiteSpace(Parameters.LoadingPlaceholderPath))
+                    if (!_isLoadingPlaceholderLoaded && !string.IsNullOrWhiteSpace(Parameters.LoadingPlaceholderPath))
                     {
                         await ShowPlaceholder(Parameters.LoadingPlaceholderPath, KeyForLoadingPlaceholder,
                                               Parameters.LoadingPlaceholderSource, true).ConfigureAwait(false);
-
-                        isLoadingPlaceholderLoaded = true;
                     }
                 }
 
@@ -353,26 +351,40 @@ namespace FFImageLoading.Work
 
             if (!await TryLoadFromMemoryCacheAsync(key, false, false, isLoadingPlaceholder).ConfigureAwait(false))
             {
-                var customResolver = isLoadingPlaceholder ? Parameters.CustomLoadingPlaceholderDataResolver : Parameters.CustomErrorPlaceholderDataResolver;
-                var loadResolver = customResolver ?? DataResolverFactory.GetResolver(path, source, Parameters, Configuration);
-                var loadImageData = await loadResolver.Resolve(path, Parameters, CancellationTokenSource.Token).ConfigureAwait(false);
-
-                using (loadImageData.Item1)
+                try
                 {
-                    ThrowIfCancellationRequested();
+                    var customResolver = isLoadingPlaceholder ? Parameters.CustomLoadingPlaceholderDataResolver : Parameters.CustomErrorPlaceholderDataResolver;
+                    var loadResolver = customResolver ?? DataResolverFactory.GetResolver(path, source, Parameters, Configuration);
+                    var loadImageData = await loadResolver.Resolve(path, Parameters, CancellationTokenSource.Token).ConfigureAwait(false);
 
-                    var loadImage = await GenerateImageAsync(path, source, loadImageData.Item1, loadImageData.Item3, TransformPlaceholders, true).ConfigureAwait(false);
+                    using (loadImageData.Item1)
+                    {
+                        ThrowIfCancellationRequested();
 
-                    if (loadImage != default(TImageContainer))
-                        MemoryCache.Add(key, loadImageData.Item3, loadImage);
+                        var loadImage = await GenerateImageAsync(path, source, loadImageData.Item1, loadImageData.Item3, TransformPlaceholders, true).ConfigureAwait(false);
 
-                    ThrowIfCancellationRequested();
+                        if (loadImage != default(TImageContainer))
+                            MemoryCache.Add(key, loadImageData.Item3, loadImage);
+
+                        ThrowIfCancellationRequested();
+
+                        if (isLoadingPlaceholder)
+                            PlaceholderWeakReference = new WeakReference<TImageContainer>(loadImage);
+
+                        await SetTargetAsync(loadImage, false).ConfigureAwait(false);
+                    }
 
                     if (isLoadingPlaceholder)
-                        PlaceholderWeakReference = new WeakReference<TImageContainer>(loadImage);
-                    
-                    await SetTargetAsync(loadImage, false).ConfigureAwait(false);
+                        _isLoadingPlaceholderLoaded = true;
                 }
+                catch (Exception ex)
+                {
+                    Logger.Error("Setting placeholder failed", ex);
+                }
+            }
+            else if (isLoadingPlaceholder)
+            {
+                _isLoadingPlaceholderLoaded = true;
             }
         }
 

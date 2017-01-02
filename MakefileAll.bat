@@ -1,5 +1,3 @@
-@echo off
-
 set msbuild="C:\Program Files (x86)\MSBuild\14.0\bin\msbuild.exe"
 set config=Windows Release
 set platform=AnyCPU
@@ -40,9 +38,11 @@ echo Building FFImageLoading.Svg...
 %msbuild% source/FFImageLoading.Svg/FFImageLoading.Svg.csproj %buildargs%
 %msbuild% source/FFImageLoading.Svg.Touch/FFImageLoading.Svg.Touch.csproj %buildargs%
 %msbuild% source/FFImageLoading.Svg.Droid/FFImageLoading.Svg.Droid.csproj %buildargs%
+%msbuild% source/FFImageLoading.Svg.Windows/FFImageLoading.Svg.Windows.csproj %buildargs%
 %msbuild% source/FFImageLoading.Svg.Forms/FFImageLoading.Svg.Forms.csproj %buildargs%
 %msbuild% source/FFImageLoading.Svg.Forms.Touch/FFImageLoading.Svg.Forms.Touch.csproj %buildargs%
 %msbuild% source/FFImageLoading.Svg.Forms.Droid/FFImageLoading.Svg.Forms.Droid.csproj %buildargs%
+%msbuild% source/FFImageLoading.Svg.Forms.Windows/FFImageLoading.Svg.Forms.Windows.csproj %buildargs%
 
 echo Generating symbols with Gitlink...
 
