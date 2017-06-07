@@ -9,6 +9,8 @@ using System.Threading;
 using System.IO;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Net;
+using System.Reflection;
 
 #if SILVERLIGHT
 using FFImageLoading.Concurrency;
@@ -18,18 +20,18 @@ using System.Collections.Concurrent;
 
 namespace FFImageLoading
 {
-    public class ImageService: IImageService
+    public class ImageService : IImageService
     {
         private volatile bool _initialized;
-		private object _initializeLock = new object();
-		private readonly MD5Helper _md5Helper = new MD5Helper();
-		private Configuration _config;
+        private object _initializeLock = new object();
+        private readonly MD5Helper _md5Helper = new MD5Helper();
+        private Configuration _config;
 
-		private static Lazy<ImageService> LazyInstance = new Lazy<ImageService>(() => new ImageService());
-		public static IImageService Instance { get { return LazyInstance.Value; } }
+        private static Lazy<ImageService> LazyInstance = new Lazy<ImageService>(() => new ImageService());
+        public static IImageService Instance { get { return LazyInstance.Value; } }
 
-		private ImageService() { }
- 
+        private ImageService() { }
+
         /// <summary>
         /// Gets FFImageLoading configuration
         /// </summary>
@@ -68,45 +70,45 @@ namespace FFImageLoading
         /// </summary>
         /// <param name="configuration">Configuration.</param>
         public void Initialize(Configuration configuration)
-		{
-			lock (_initializeLock)
-			{
-				_initialized = false;
+        {
+            lock (_initializeLock)
+            {
+                _initialized = false;
 
-				if (_config != null)
-				{
-					// Redefine these if they were provided only
-					configuration.HttpClient = configuration.HttpClient ?? _config.HttpClient;
-					configuration.Scheduler = configuration.Scheduler ?? _config.Scheduler;
-					configuration.Logger = configuration.Logger ?? _config.Logger;
-					configuration.DownloadCache = configuration.DownloadCache ?? _config.DownloadCache;
+                if (_config != null)
+                {
+                    // Redefine these if they were provided only
+                    configuration.HttpClient = configuration.HttpClient ?? _config.HttpClient;
+                    configuration.Scheduler = configuration.Scheduler ?? _config.Scheduler;
+                    configuration.Logger = configuration.Logger ?? _config.Logger;
+                    configuration.DownloadCache = configuration.DownloadCache ?? _config.DownloadCache;
                     configuration.DataResolverFactory = configuration.DataResolverFactory ?? _config.DataResolverFactory;
                     configuration.SchedulerMaxParallelTasksFactory = configuration.SchedulerMaxParallelTasksFactory ?? _config.SchedulerMaxParallelTasksFactory;
                     configuration.MD5Helper = configuration.MD5Helper ?? _config.MD5Helper;
 
-					// Skip configuration for maxMemoryCacheSize and diskCache. They cannot be redefined.
-					if (configuration.Logger != null)
-						configuration.Logger.Debug("Skip configuration for maxMemoryCacheSize and diskCache. They cannot be redefined.");
-					configuration.MaxMemoryCacheSize = _config.MaxMemoryCacheSize;
-					configuration.DiskCache = _config.DiskCache;
-				}
+                    // Skip configuration for maxMemoryCacheSize and diskCache. They cannot be redefined.
+                    if (configuration.Logger != null)
+                        configuration.Logger.Debug("Skip configuration for maxMemoryCacheSize and diskCache. They cannot be redefined.");
+                    configuration.MaxMemoryCacheSize = _config.MaxMemoryCacheSize;
+                    configuration.DiskCache = _config.DiskCache;
+                }
 
-				InitializeIfNeeded(configuration);
-			}
-		}
+                InitializeIfNeeded(configuration);
+            }
+        }
 
-		private void InitializeIfNeeded(Configuration userDefinedConfig = null)
+        private void InitializeIfNeeded(Configuration userDefinedConfig = null)
         {
-			if (_initialized)
-				return;
+            if (_initialized)
+                return;
 
-			lock (_initializeLock)
-			{
-				if (_initialized)
-					return;
+            lock (_initializeLock)
+            {
+                if (_initialized)
+                    return;
 
-				if (userDefinedConfig == null)
-					userDefinedConfig = new Configuration();
+                if (userDefinedConfig == null)
+                    userDefinedConfig = new Configuration();
 
                 var logger = new MiniLoggerWrapper(userDefinedConfig.Logger ?? new MiniLogger(), userDefinedConfig.VerboseLogging);
                 userDefinedConfig.Logger = logger;
@@ -114,15 +116,15 @@ namespace FFImageLoading
                 var md5Helper = userDefinedConfig.MD5Helper ?? new MD5Helper();
                 userDefinedConfig.MD5Helper = md5Helper;
 
-				var httpClient = userDefinedConfig.HttpClient ?? new HttpClient();
+                var httpClient = userDefinedConfig.HttpClient ?? new HttpClient(new HttpClientHandler() { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate });
 
-				if (userDefinedConfig.HttpReadTimeout > 0)
-				{
-					httpClient.Timeout = TimeSpan.FromSeconds(userDefinedConfig.HttpReadTimeout);
-				}
+                if (userDefinedConfig.HttpReadTimeout > 0)
+                {
+                    httpClient.Timeout = TimeSpan.FromSeconds(userDefinedConfig.HttpReadTimeout);
+                }
                 userDefinedConfig.HttpClient = httpClient;
 
-                var scheduler = userDefinedConfig.Scheduler ?? new WorkScheduler(userDefinedConfig, new PlatformPerformance());
+                var scheduler = userDefinedConfig.Scheduler ?? new WorkScheduler(userDefinedConfig, PlatformPerformance.Create());
                 userDefinedConfig.Scheduler = scheduler;
 
                 if (string.IsNullOrWhiteSpace(userDefinedConfig.DiskCachePath))
@@ -137,17 +139,17 @@ namespace FFImageLoading
                 }
 
                 var downloadCache = userDefinedConfig.DownloadCache ?? new DownloadCache(userDefinedConfig);
-				userDefinedConfig.DownloadCache = downloadCache;
+                userDefinedConfig.DownloadCache = downloadCache;
 
-				Config = userDefinedConfig;
+                Config = userDefinedConfig;
 
-				_initialized = true;
-			}
+                _initialized = true;
+            }
         }
 
         private IWorkScheduler Scheduler
         {
-            get 
+            get
             {
                 InitializeIfNeeded();
                 return Config.Scheduler;
@@ -177,27 +179,47 @@ namespace FFImageLoading
             return TaskParameter.FromUrl(url, cacheDuration);
         }
 
-		/// <summary>
-		/// Constructs a new TaskParameter to load an image from a file from application bundle.
-		/// </summary>
-		/// <returns>The new TaskParameter.</returns>
-		/// <param name="filepath">Path to the file.</param>
-		public TaskParameter LoadFileFromApplicationBundle(string filepath)
-		{
-			InitializeIfNeeded();
-			return TaskParameter.FromApplicationBundle(filepath);
-		}
+        /// <summary>
+        /// Constructs a new TaskParameter to load an image from a file from application bundle.
+        /// </summary>
+        /// <returns>The new TaskParameter.</returns>
+        /// <param name="filepath">Path to the file.</param>
+        public TaskParameter LoadFileFromApplicationBundle(string filepath)
+        {
+            InitializeIfNeeded();
+            return TaskParameter.FromApplicationBundle(filepath);
+        }
 
-		/// <summary>
-		/// Constructs a new TaskParameter to load an image from a compiled drawable resource.
-		/// </summary>
-		/// <returns>The new TaskParameter.</returns>
-		/// <param name="resourceName">Name of the resource in drawable folder without extension</param>
-		public TaskParameter LoadCompiledResource(string resourceName)
-		{
-			InitializeIfNeeded();
-			return TaskParameter.FromCompiledResource(resourceName);
-		}
+        /// <summary>
+        /// Constructs a new TaskParameter to load an image from a compiled drawable resource.
+        /// </summary>
+        /// <returns>The new TaskParameter.</returns>
+        /// <param name="resourceName">Name of the resource in drawable folder without extension</param>
+        public TaskParameter LoadCompiledResource(string resourceName)
+        {
+            InitializeIfNeeded();
+            return TaskParameter.FromCompiledResource(resourceName);
+        }
+
+        /// <summary>
+        /// Constructs a new TaskParameter to load an image from a compiled drawable resource.
+        /// eg. resource://YourProject.Resource.Resource.png
+        /// eg. resource://YourProject.Resource.Resource.png?assembly=[FULL_ASSEMBLY_NAME]
+        /// </summary>
+        /// <returns>The new TaskParameter.</returns>
+        /// <param name="resourceUri">Uri of the resource</param>
+        public TaskParameter LoadEmbeddedResource(string resourceUri)
+        {
+            InitializeIfNeeded();
+            return TaskParameter.FromEmbeddedResource(resourceUri);
+        }
+
+        public TaskParameter LoadEmbeddedResource(string resourceName, Assembly resourceAssembly)
+        {
+            InitializeIfNeeded();
+            var uri = $"resource://{resourceName}?assembly={Uri.EscapeUriString(resourceAssembly.FullName)}";
+            return TaskParameter.FromEmbeddedResource(uri);
+        }
 
 		/// <summary>
 		/// Constructs a new TaskParameter to load an image from a Stream.
@@ -351,7 +373,8 @@ namespace FFImageLoading
         /// <summary>
         /// Cancels tasks that match predicate.
         /// </summary>
-        /// <param name="predicate">Predicate for finding relevant tasks to cancel.</param>        public void Cancel(Func<IImageLoaderTask, bool> predicate)
+        /// <param name="predicate">Predicate for finding relevant tasks to cancel.</param>
+        public void Cancel(Func<IImageLoaderTask, bool> predicate)
         {
             Scheduler.Cancel(predicate);
         }

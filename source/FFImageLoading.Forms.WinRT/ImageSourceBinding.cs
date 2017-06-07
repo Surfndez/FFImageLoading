@@ -15,21 +15,21 @@ namespace FFImageLoading.Forms.WinRT
 {
     public class ImageSourceBinding
     {
-        public ImageSourceBinding(Work.ImageSource imageSource, string path)
-        {
-            ImageSource = imageSource;
-            Path = path;
-        }
+		public ImageSourceBinding(FFImageLoading.Work.ImageSource imageSource, string path)
+		{
+			ImageSource = imageSource;
+			Path = path;
+		}
 
-        public ImageSourceBinding(Func<CancellationToken, Task<Stream>> stream)
-        {
-            ImageSource = Work.ImageSource.Stream;
-            Stream = stream;
-        }
+		public ImageSourceBinding(Func<CancellationToken, Task<Stream>> stream)
+		{
+			ImageSource = FFImageLoading.Work.ImageSource.Stream;
+			Stream = stream;
+		}
 
-        public Work.ImageSource ImageSource { get; private set; }
+		public FFImageLoading.Work.ImageSource ImageSource { get; private set; }
 
-        public string Path { get; private set; }
+		public string Path { get; private set; }
 
         public Func<CancellationToken, Task<Stream>> Stream { get; private set; }
 
@@ -85,39 +85,52 @@ namespace FFImageLoading.Forms.WinRT
                 return new ImageSourceBinding(streamImageSource.Stream);
             }
 
-			var vectorSource = source as IVectorImageSource;
-			if (vectorSource != null)
+			var embeddedResoureSource = source as EmbeddedResourceImageSource;
+			if (embeddedResoureSource != null)
 			{
-				if (element.Height > 0d)
-				{
-					vectorSource.UseDipUnits = true;
-					vectorSource.VectorHeight = (int)element.Height;
-				}
-				else if (element.Width > 0d)
-				{
-					vectorSource.UseDipUnits = true;
-					vectorSource.VectorWidth = (int)element.Width;
-				}
-				else if (element.HeightRequest > 0d)
-				{
-					vectorSource.UseDipUnits = true;
-					vectorSource.VectorHeight = (int)element.HeightRequest;
-				}
-				else if (element.WidthRequest > 0d)
-				{
-					vectorSource.UseDipUnits = true;
-					vectorSource.VectorWidth = (int)element.WidthRequest;
-				}
-				else if (element.MinimumHeightRequest > 0d)
-				{
-					vectorSource.UseDipUnits = true;
-					vectorSource.VectorHeight = (int)element.MinimumHeightRequest;
-				}
-				else if (element.MinimumWidthRequest > 0d)
-				{
-					vectorSource.UseDipUnits = true;
-					vectorSource.VectorWidth = (int)element.MinimumWidthRequest;
-				}
+				var uri = embeddedResoureSource.Uri?.OriginalString;
+				if (string.IsNullOrWhiteSpace(uri))
+					return null;
+
+				return new ImageSourceBinding(FFImageLoading.Work.ImageSource.EmbeddedResource, uri);
+			}
+
+            var vectorSource = source as IVectorImageSource;
+            if (vectorSource != null)
+            {
+                if (vectorSource.VectorHeight == 0 && vectorSource.VectorHeight == 0)
+                {
+                    if (element.Height > 0d && !double.IsInfinity(element.Height))
+                    {
+                        vectorSource.UseDipUnits = true;
+                        vectorSource.VectorHeight = (int)element.Height;
+                    }
+                    else if (element.Width > 0d && !double.IsInfinity(element.Width))
+                    {
+                        vectorSource.UseDipUnits = true;
+                        vectorSource.VectorWidth = (int)element.Width;
+                    }
+                    else if (element.HeightRequest > 0d && !double.IsInfinity(element.HeightRequest))
+                    {
+                        vectorSource.UseDipUnits = true;
+                        vectorSource.VectorHeight = (int)element.HeightRequest;
+                    }
+                    else if (element.WidthRequest > 0d && !double.IsInfinity(element.WidthRequest))
+                    {
+                        vectorSource.UseDipUnits = true;
+                        vectorSource.VectorWidth = (int)element.WidthRequest;
+                    }
+                    else if (element.MinimumHeightRequest > 0d && !double.IsInfinity(element.MinimumHeightRequest))
+                    {
+                        vectorSource.UseDipUnits = true;
+                        vectorSource.VectorHeight = (int)element.MinimumHeightRequest;
+                    }
+                    else if (element.MinimumWidthRequest > 0d && !double.IsInfinity(element.MinimumWidthRequest))
+                    {
+                        vectorSource.UseDipUnits = true;
+                        vectorSource.VectorWidth = (int)element.MinimumWidthRequest;
+                    }
+                }
 
 				return await GetImageSourceBinding(vectorSource.ImageSource, element).ConfigureAwait(false);
 			}

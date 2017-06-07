@@ -598,14 +598,16 @@ namespace FFImageLoading.Forms
 		public static async Task InvalidateCache(ImageSource source, Cache.CacheType cacheType, bool removeSimilar = false)
 		{
 			var fileImageSource = source as FileImageSource;
-
 			if (fileImageSource != null)
 				await ImageService.Instance.InvalidateCacheEntryAsync(fileImageSource.File, cacheType, removeSimilar).ConfigureAwait(false);
 
 			var uriImageSource = source as UriImageSource;
-
 			if (uriImageSource != null)
 				await ImageService.Instance.InvalidateCacheEntryAsync(uriImageSource.Uri.OriginalString, cacheType, removeSimilar).ConfigureAwait(false);
+
+            var embResourceSource = source as EmbeddedResourceImageSource;
+            if (embResourceSource != null)
+              await ImageService.Instance.InvalidateCacheEntryAsync(embResourceSource.Uri.OriginalString, cacheType, removeSimilar).ConfigureAwait(false);  
 		}
 
 		/// <summary>
@@ -864,6 +866,15 @@ namespace FFImageLoading.Forms
             {
                 SetValue(CacheTypeProperty, value);
             }
+        }
+
+        /// <summary>
+        /// Setups the on before image loading. 
+        /// You can add additional logic here to configure image loader settings before loading
+        /// </summary>
+        /// <param name="imageLoader">Image loader.</param>
+        protected internal virtual void SetupOnBeforeImageLoading(Work.TaskParameter imageLoader)
+        {
         }
     }
 }

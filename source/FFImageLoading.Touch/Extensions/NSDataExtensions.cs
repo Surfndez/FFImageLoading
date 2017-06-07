@@ -18,22 +18,16 @@ namespace FFImageLoading.Extensions
 		}
 
 		// Shamelessly copied from React-Native: https://github.com/facebook/react-native/blob/2cbc9127560c5f0f89ae5aa6ff863b1818f1c7c3/Libraries/Image/RCTImageUtils.m
-		public static UIImage ToImage(this NSData data, CGSize destSize, nfloat destScale, RCTResizeMode resizeMode = RCTResizeMode.ScaleAspectFit, ImageInformation imageinformation = null)
+		public static UIImage ToImage(this NSData data, CGSize destSize, nfloat destScale, RCTResizeMode resizeMode = RCTResizeMode.ScaleAspectFit, ImageInformation imageinformation = null, bool allowUpscale = false)
         {
 			using (var sourceRef = CGImageSource.FromData(data))
 			{
-				if (sourceRef == null)
-				{
-					return null;
-				}
+                var imageProperties = GetImageProperties(sourceRef);
 
-				// Get original image size
-				var imageProperties = sourceRef.GetProperties(0);
-
-				if (imageProperties == null)
-				{
-					return null;
-				}
+                if (imageProperties == null)
+                {
+                    throw new BadImageFormatException("Image is null");
+                }
 
 				if (imageinformation != null)
 				{
@@ -57,7 +51,7 @@ namespace FFImageLoading.Extensions
 				}
 
 				// Calculate target size
-				CGSize targetSize = RCTTargetSize(sourceSize, 1, destSize, destScale, resizeMode, false);
+				CGSize targetSize = RCTTargetSize(sourceSize, 1, destSize, destScale, resizeMode, allowUpscale);
 				CGSize targetPixelSize = RCTSizeInPixels(targetSize, destScale);
 				int maxPixelSize = (int)Math.Max(
 					Math.Min(sourceSize.Width, targetPixelSize.Width),
@@ -73,26 +67,32 @@ namespace FFImageLoading.Extensions
 						ShouldCache = false,
 				};
 
-				// Get thumbnail
-				using (var imageRef = sourceRef.CreateThumbnail(0, options))
-				{
-					if (imageRef == null)
-					{
-						return null;
-					}
+                UIImage image = null;
 
-					// Return image
-					var image = new UIImage(imageRef, destScale, UIImageOrientation.Up);
+                // gif
+                if (sourceRef.ImageCount > 1)
+                    image = GifHelper.AnimateGif(sourceRef, destScale);
+                else
+                {
+                    // Get thumbnail
+                    using (var imageRef = sourceRef.CreateThumbnail(0, options))
+                    {
+                        if (imageRef != null)
+                        {
+                            // Return image
+                            image = new UIImage(imageRef, destScale, UIImageOrientation.Up);
+                        }
+                    }
+                }
 
-					if (imageinformation != null)
-					{
-						int width = (int)image.Size.Width;
-						int height = (int)image.Size.Height;
-						imageinformation.SetCurrentSize(width.PointsToPixels(), height.PointsToPixels());
-					}
+                if (imageinformation != null && image != null)
+                {
+                    int width = (int)image.Size.Width;
+                    int height = (int)image.Size.Height;
+                    imageinformation.SetCurrentSize(width.PointsToPixels(), height.PointsToPixels());
+                }
 
-					return image;
-				}
+                return image;
 			}
 		}
 
@@ -244,6 +244,26 @@ namespace FFImageLoading.Extensions
 					}
 			}
 		}
+
+        private static CoreGraphics.CGImageProperties GetImageProperties(CGImageSource imageSource)
+        {
+            if (imageSource == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                // Get original image size
+                 return imageSource.GetProperties(0);
+            }
+            catch (ArgumentNullException ex)
+            {
+                ImageService.Instance.Config.Logger.Debug(ex.ToString());
+                return null;
+            }
+        }
+                            
 	}
 }
 

@@ -44,7 +44,17 @@ namespace FFImageLoading.Work
             try
             {
                 // Special case to handle WebP decoding on iOS
-                if (source != ImageSource.Stream && path.ToLowerInvariant().EndsWith(".webp", StringComparison.InvariantCulture))
+
+                string ext = null;
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    if (source == ImageSource.Url)
+                        ext = Path.GetExtension(new Uri(path).LocalPath).ToLowerInvariant();
+                    else
+                        ext = Path.GetExtension(path).ToLowerInvariant();
+                }
+                
+                if (source != ImageSource.Stream && ext == ".webp")
                 {
                     imageIn = new WebP.Touch.WebPCodec().Decode(imageData);
                 }
@@ -53,6 +63,7 @@ namespace FFImageLoading.Work
                     var nsdata = NSData.FromStream(imageData);
                     int downsampleWidth = Parameters.DownSampleSize?.Item1 ?? 0;
                     int downsampleHeight = Parameters.DownSampleSize?.Item2 ?? 0;
+                    bool allowUpscale = Parameters.AllowUpscale ?? Configuration.AllowUpscale;
 
                     if (Parameters.DownSampleUseDipUnits)
                     {
@@ -60,7 +71,7 @@ namespace FFImageLoading.Work
                         downsampleHeight = downsampleHeight.PointsToPixels();
                     }
 
-                    imageIn = nsdata.ToImage(new CoreGraphics.CGSize(downsampleWidth, downsampleHeight), ScaleHelper.Scale, NSDataExtensions.RCTResizeMode.ScaleAspectFill, imageInformation);
+                    imageIn = nsdata.ToImage(new CoreGraphics.CGSize(downsampleWidth, downsampleHeight), ScaleHelper.Scale, NSDataExtensions.RCTResizeMode.ScaleAspectFill, imageInformation, allowUpscale);
                 }
             }
             finally
@@ -86,7 +97,7 @@ namespace FFImageLoading.Work
 
                         try
                         {
-                            var bitmapHolder = transformation.Transform(new BitmapHolder(imageIn));
+                            var bitmapHolder = transformation.Transform(new BitmapHolder(imageIn), path, source, isPlaceholder, Key);
                             imageIn = bitmapHolder.ToNative();
                         }
                         catch (Exception ex)

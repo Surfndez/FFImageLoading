@@ -156,6 +156,10 @@ namespace FFImageLoading.Forms.Droid
 				{
 					imageLoader = ImageService.Instance.LoadStream(ffSource.Stream);
 				}
+                else if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.EmbeddedResource)
+				{
+                    imageLoader = ImageService.Instance.LoadEmbeddedResource(ffSource.Path);
+				}
 
 				if (imageLoader != null)
 				{
@@ -309,6 +313,8 @@ namespace FFImageLoading.Forms.Droid
 					imageLoader.FileWriteFinished((fileWriteInfo) =>
 						element.OnFileWriteFinished(new CachedImageEvents.FileWriteFinishedEventArgs(fileWriteInfo)));
 
+                    element.SetupOnBeforeImageLoading(imageLoader);
+
 					_currentTask = imageLoader.Into(imageView);
 				}
 			}
@@ -331,13 +337,20 @@ namespace FFImageLoading.Forms.Droid
 			UpdateBitmap(null);
 		}
 
-		private async void Cancel()
+		private void Cancel()
 		{
-			var taskToCancel = _currentTask;
-			if (taskToCancel != null && !taskToCancel.IsCancelled)
-			{
-				await Task.Run(() => taskToCancel?.Cancel());
-			}
+            try
+            {
+                var taskToCancel = _currentTask;
+                if (taskToCancel != null && !taskToCancel.IsCancelled)
+                {
+                    taskToCancel?.Cancel();
+                }
+            }
+            catch (Exception ex)
+            {
+                ImageService.Instance.Config.Logger.Error(ex.Message, ex);
+            }
 		}
 
 		private Task<byte[]> GetImageAsJpgAsync(GetImageAsJpgArgs args)

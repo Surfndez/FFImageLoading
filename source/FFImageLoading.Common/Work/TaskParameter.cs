@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using FFImageLoading.Cache;
+using FFImageLoading.Config;
 
 namespace FFImageLoading.Work
 {
@@ -16,14 +17,27 @@ namespace FFImageLoading.Work
             Transformations = new List<ITransformation>();
         }
 
-		/// <summary>
-		/// Constructs a new TaskParameter to load an image from a file.
-		/// </summary>
-		/// <returns>The new TaskParameter.</returns>
-		/// <param name="filepath">Path to the file.</param>
-		public static TaskParameter FromFile(string filepath)
+        /// <summary>
+        /// Constructs a new TaskParameter to load an image from a file.
+        /// </summary>
+        /// <returns>The new TaskParameter.</returns>
+        /// <param name="filepath">Path to the file.</param>
+        public static TaskParameter FromFile(string filepath)
+        {
+            return new TaskParameter() { Source = ImageSource.Filepath, Path = filepath };
+        }
+
+        /// <summary>
+        /// Constructs a new TaskParameter to load an image from a file.
+        /// </summary>
+        /// <returns>The new TaskParameter.</returns>
+        /// <param name="resourceUri">Uri to the resource.</param>
+        public static TaskParameter FromEmbeddedResource(string resourceUri)
 		{
-            return new TaskParameter() { Source = ImageSource.Filepath, Path = filepath }; 
+            if (!resourceUri.StartsWith("resource://", StringComparison.OrdinalIgnoreCase))
+                resourceUri = $"resource://{resourceUri}";
+
+            return new TaskParameter() { Source = ImageSource.EmbeddedResource, Path = resourceUri }; 
 		}
 
 		/// <summary>
@@ -92,6 +106,8 @@ namespace FFImageLoading.Work
 		public Tuple<int, int> DownSampleSize { get; private set; }
 
 		public bool DownSampleUseDipUnits { get; private set; }
+
+		public bool? AllowUpscale { get; private set; }
 
         public InterpolationMode DownSampleInterpolationMode { get; private set; }
 
@@ -202,10 +218,12 @@ namespace FFImageLoading.Work
 		/// <returns>The TaskParameter instance for chaining the call.</returns>
 		/// <param name="width">Optional width parameter, if value is higher than zero it will try to downsample to this width while keeping aspect ratio.</param>
 		/// <param name="height">Optional height parameter, if value is higher than zero it will try to downsample to this height while keeping aspect ratio.</param>
-		public TaskParameter DownSample(int width = 0, int height = 0)
+        /// <param name="allowUpscale">Whether to upscale the image if it is smaller than passed dimensions or not; if <c>null</c> the value is taken from Configuration (<c>false</c> by default)</param>
+        public TaskParameter DownSample(int width = 0, int height = 0, bool? allowUpscale = null)
 		{
 			DownSampleUseDipUnits = false;
 			DownSampleSize = Tuple.Create(width, height);
+		    AllowUpscale = allowUpscale;
 
 			return this;
 		}
@@ -217,10 +235,12 @@ namespace FFImageLoading.Work
 		/// <returns>The TaskParameter instance for chaining the call.</returns>
 		/// <param name="width">Optional width parameter, if value is higher than zero it will try to downsample to this width while keeping aspect ratio.</param>
 		/// <param name="height">Optional height parameter, if value is higher than zero it will try to downsample to this height while keeping aspect ratio.</param>
-		public TaskParameter DownSampleInDip(int width = 0, int height = 0)
+        /// <param name="allowUpscale">Whether to upscale the image if it is smaller than passed dimensions or not; if <c>null</c> the value is taken from Configuration (<c>false</c> by default)</param>
+        public TaskParameter DownSampleInDip(int width = 0, int height = 0, bool? allowUpscale = null)
 		{
 			DownSampleUseDipUnits = true;
 			DownSampleSize = Tuple.Create(width, height);
+		    AllowUpscale = allowUpscale;
 
 			return this;
 		}

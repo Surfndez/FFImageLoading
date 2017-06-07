@@ -154,6 +154,10 @@ namespace FFImageLoading.Forms.Touch
 			{
 				imageLoader = ImageService.Instance.LoadStream(ffSource.Stream);
 			}
+			else if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.EmbeddedResource)
+			{
+                imageLoader = ImageService.Instance.LoadEmbeddedResource(ffSource.Path);
+			}
 
 			if (imageLoader != null)
 			{
@@ -302,6 +306,8 @@ namespace FFImageLoading.Forms.Touch
 				imageLoader.FileWriteFinished((fileWriteInfo) =>
 					element.OnFileWriteFinished(new CachedImageEvents.FileWriteFinishedEventArgs(fileWriteInfo)));
 				
+                element.SetupOnBeforeImageLoading(imageLoader);
+
 				_currentTask = imageLoader.Into(Control);	
 			}
 		}

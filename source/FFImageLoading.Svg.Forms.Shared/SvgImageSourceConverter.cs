@@ -4,12 +4,17 @@ using Xamarin.Forms;
 
 namespace FFImageLoading.Svg.Forms
 {
-    /// <summary>
-    /// SvgImageSourceConverter
-    /// </summary>
-	public class SvgImageSourceConverter : IValueConverter
+	/// <summary>
+	/// SvgImageSourceConverter
+	/// </summary>
+#if __IOS__
+            [Foundation.Preserve(AllMembers = true)]
+#elif __ANDROID__
+            [Android.Runtime.Preserve(AllMembers = true)]
+#endif
+	public class SvgImageSourceConverter : TypeConverter, IValueConverter
 	{
-		ImageSourceConverter imageSourceConverter = new ImageSourceConverter();
+        FFImageLoading.Forms.ImageSourceConverter _imageSourceConverter = new FFImageLoading.Forms.ImageSourceConverter();
 
         /// <summary>
         /// Convert
@@ -25,7 +30,7 @@ namespace FFImageLoading.Svg.Forms
 			if (string.IsNullOrWhiteSpace(str))
 				return null;
 
-			var xfSource = imageSourceConverter.ConvertFromInvariantString(str) as ImageSource;
+			var xfSource = _imageSourceConverter.ConvertFromInvariantString(str) as ImageSource;
 
 			//TODO Parse width / height eg. image.svg@SVG=0x200  where 200 is width
 			return new SvgImageSource(xfSource, 0, 0, true);
@@ -43,5 +48,28 @@ namespace FFImageLoading.Svg.Forms
 		{
 			throw new NotImplementedException();
 		}
+
+        public override bool CanConvertFrom(Type sourceType)
+        {
+        	return sourceType == typeof(string);
+        }
+
+        [Obsolete]
+        public override object ConvertFrom(CultureInfo culture, object value)
+        {
+			var text = value as string;
+
+			if (text == null)
+				return null;
+
+            var xfSource = _imageSourceConverter.ConvertFromInvariantString(text) as ImageSource;
+
+            if (text.Contains("svg", StringComparison.OrdinalIgnoreCase))
+            {
+                return new SvgImageSource(xfSource, 0, 0, true);
+            }
+
+            return xfSource;
+        }
 	}
 }

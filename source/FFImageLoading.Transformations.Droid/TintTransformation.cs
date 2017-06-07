@@ -1,8 +1,10 @@
 ﻿using System;
 using Android.Graphics;
+using Android.Runtime;
 
 namespace FFImageLoading.Transformations
 {
+    [Preserve(AllMembers = true)]
 	public class TintTransformation : ColorSpaceTransformation
 	{
 		public TintTransformation() : this(0, 165, 0, 128)
@@ -60,14 +62,14 @@ namespace FFImageLoading.Transformations
 			}
 		}
 
-		protected override Bitmap Transform(Bitmap source)
+		protected override Bitmap Transform(Bitmap sourceBitmap, string path, Work.ImageSource source, bool isPlaceholder, string key)
 		{
 			if (EnableSolidColor)
-				return ToSolidColor(source, R, G, B, A);
+				return ToSolidColor(sourceBitmap, R, G, B, A);
 
 			RGBAWMatrix = FFColorMatrix.ColorToTintMatrix(R, G, B, A);
 
-			return base.Transform(source);
+            return base.Transform(sourceBitmap, path, source, isPlaceholder, key);
 		}
 
 		public static Bitmap ToSolidColor(Bitmap sourceBitmap, int r, int g, int b, int a)

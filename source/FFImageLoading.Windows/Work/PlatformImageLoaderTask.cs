@@ -42,17 +42,27 @@ namespace FFImageLoading.Work
             try
             {
                 // Special case to handle WebP decoding on Windows
-                if (source != ImageSource.Stream && path.ToLowerInvariant().EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
+                string ext = null;
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    if (source == ImageSource.Url)
+                        ext = Path.GetExtension(new Uri(path).LocalPath).ToLowerInvariant();
+                    else
+                        ext = Path.GetExtension(path).ToLowerInvariant();
+                }
+                
+                bool allowUpscale = Parameters.AllowUpscale ?? Configuration.AllowUpscale;
+                if (source != ImageSource.Stream && ext == ".webp")
                 {
                     throw new NotImplementedException("Webp is not implemented on Windows");
                 }
                 else if (enableTransformations && Parameters.Transformations != null && Parameters.Transformations.Count > 0)
                 {
-                    imageIn = await imageData.ToBitmapHolderAsync(Parameters.DownSampleSize, Parameters.DownSampleUseDipUnits, Parameters.DownSampleInterpolationMode, imageInformation).ConfigureAwait(false);
+                    imageIn = await imageData.ToBitmapHolderAsync(Parameters.DownSampleSize, Parameters.DownSampleUseDipUnits, Parameters.DownSampleInterpolationMode, allowUpscale, imageInformation).ConfigureAwait(false);
                 }
                 else
                 {
-                    return await imageData.ToBitmapImageAsync(Parameters.DownSampleSize, Parameters.DownSampleUseDipUnits, Parameters.DownSampleInterpolationMode, imageInformation).ConfigureAwait(false);
+                    return await imageData.ToBitmapImageAsync(Parameters.DownSampleSize, Parameters.DownSampleUseDipUnits, Parameters.DownSampleInterpolationMode, allowUpscale, imageInformation).ConfigureAwait(false);
                 }
             }
             finally
@@ -78,7 +88,7 @@ namespace FFImageLoading.Work
 
                         try
                         {
-                            IBitmap bitmapHolder = transformation.Transform(imageIn);
+                            IBitmap bitmapHolder = transformation.Transform(imageIn, path, source, isPlaceholder, Key);
                             imageIn = bitmapHolder.ToNative();
                         }
                         catch (Exception ex)
