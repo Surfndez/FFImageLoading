@@ -5,6 +5,7 @@ using System.Reflection;
 
 namespace FFImageLoading.Forms
 {
+    [Preserve(AllMembers = true)]
 	public class ImageSourceConverter : TypeConverter
 	{
 		public override bool CanConvertFrom(Type sourceType)
@@ -20,12 +21,17 @@ namespace FFImageLoading.Forms
 			if (text == null)
 				return null;
 
+            if (text.IsDataUrl())
+            {
+                return new DataUrlImageSource(text);
+            }
+
             Uri uri;
 
-            if (text != null && Uri.TryCreate(text, UriKind.Absolute, out uri))
+            if (Uri.TryCreate(text, UriKind.Absolute, out uri))
             {
                 if (uri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase))
-                    return ImageSource.FromFile(text);
+                    return ImageSource.FromFile(uri.LocalPath);
                 if (uri.Scheme.Equals("resource", StringComparison.OrdinalIgnoreCase))
                     return new EmbeddedResourceImageSource(uri);
 

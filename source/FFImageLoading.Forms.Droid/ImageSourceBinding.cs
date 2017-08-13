@@ -73,6 +73,15 @@ namespace FFImageLoading.Forms.Droid
                 return new ImageSourceBinding(FFImageLoading.Work.ImageSource.EmbeddedResource, uri);
 			}
 
+            var dataUrlSource = source as DataUrlImageSource;
+			if (dataUrlSource != null)
+			{
+                if (string.IsNullOrWhiteSpace(dataUrlSource.DataUrl))
+					return null;
+
+                return new ImageSourceBinding(FFImageLoading.Work.ImageSource.Url, dataUrlSource.DataUrl);
+			}
+
 			var vectorSource = source as IVectorImageSource;
 			if (vectorSource != null)
 			{
@@ -121,11 +130,12 @@ namespace FFImageLoading.Forms.Droid
 			var item = obj as ImageSourceBinding;
 
 			if (item == null)
-			{
-				return false;
-			}
+			    return false;
 
-			return this.ImageSource == item.ImageSource && this.Path == item.Path && this.Stream == item.Stream;
+            if (item.Stream != null || this.Stream != null)
+                return false;
+
+            return this.ImageSource == item.ImageSource && this.Path == item.Path;
 		}
 
 		public override int GetHashCode()
