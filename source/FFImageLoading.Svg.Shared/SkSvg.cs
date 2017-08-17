@@ -179,6 +179,9 @@ namespace FFImageLoading.Svg.Platform
 
 		private void ReadElement(XElement e, SKCanvas canvas, SKPaint stroke, SKPaint fill)
 		{
+            if (e.Attribute("display")?.Value == "none")
+                return;
+            
 			// transform matrix
 			var transform = ReadTransform(e.Attribute("transform")?.Value ?? string.Empty);
 			canvas.Save();
@@ -210,6 +213,7 @@ namespace FFImageLoading.Svg.Platform
 						var rx = ReadNumber(e.Attribute("rx"));
 						var ry = ReadNumber(e.Attribute("ry"));
 						var rect = SKRect.Create(x, y, width, height);
+
 						if (rx > 0 || ry > 0)
 						{
 							if (fill != null)
@@ -257,7 +261,7 @@ namespace FFImageLoading.Svg.Platform
 						var d = e.Attribute("d")?.Value;
 						if (!string.IsNullOrWhiteSpace(d))
 						{
-							var path = SKPath.ParseSvgPathData(d);
+                            var path = GetSKPathFromSVGPath(d);
 							if (fill != null)
 								canvas.DrawPath(path, fill);
 							if (stroke != null)
@@ -645,7 +649,7 @@ namespace FFImageLoading.Svg.Platform
 						strokePaint = CreatePaint(true);
 
 					SKColor color;
-					if (SKColor.TryParse(stroke, out color))
+					if (ColorsHelper.TryParse(stroke, out color))
 					{
 						// preserve alpha
 						if (color.Alpha == 255)
@@ -696,7 +700,7 @@ namespace FFImageLoading.Svg.Platform
 						fillPaint = CreatePaint();
 
 					SKColor color;
-					if (SKColor.TryParse(fill, out color))
+                    if (ColorsHelper.TryParse(fill, out color))
 					{
 						// preserve alpha
 						if (color.Alpha == 255)
@@ -844,30 +848,23 @@ namespace FFImageLoading.Svg.Platform
 			return t;
 		}
 
+        private SKPath GetSKPathFromSVGPath(string svgPath)
+        {
+			if (svgPath[0] != 'M' && svgPath[0] != 'm')
+				svgPath = "M" + svgPath;
+
+			var path = SKPath.ParseSvgPathData(svgPath);
+            return path;
+        }
+
 		private SKPath ReadPolyPath(string pointsData, bool closePath)
 		{
-			var path = new SKPath();
-			var points = pointsData.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-			for (int i = 0; i < points.Length; i++)
-			{
-				var point = points[i];
-				var xy = point.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-				var x = ReadNumber(xy[0]);
-				var y = ReadNumber(xy[1]);
-				if (i == 0)
-				{
-					path.MoveTo(x, y);
-				}
-				else
-				{
-					path.LineTo(x, y);
-				}
-			}
-			if (closePath)
-			{
-				path.Close();
-			}
-			return path;
+            var path = GetSKPathFromSVGPath(pointsData);
+
+            if (closePath)
+                path?.Close();
+
+            return path;
 		}
 
 		private SKTextAlign ReadTextAlignment(XElement element)
@@ -1013,7 +1010,7 @@ namespace FFImageLoading.Svg.Platform
 				if (style.TryGetValue("stop-color", out stopColor))
 				{
 					// preserve alpha
-					if (SKColor.TryParse(stopColor, out color) && color.Alpha == 255)
+                    if (ColorsHelper.TryParse(stopColor, out color) && color.Alpha == 255)
 						alpha = color.Alpha;
 				}
 
