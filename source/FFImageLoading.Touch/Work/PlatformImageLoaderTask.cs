@@ -9,6 +9,8 @@ using FFImageLoading.Extensions;
 using System.Threading;
 using FFImageLoading.Config;
 using FFImageLoading.Cache;
+using ImageIO;
+using System.Collections.Generic;
 
 namespace FFImageLoading.Work
 {
@@ -43,35 +45,27 @@ namespace FFImageLoading.Work
 
             try
             {
-                // Special case to handle WebP decoding on iOS
+                int downsampleWidth = Parameters.DownSampleSize?.Item1 ?? 0;
+                int downsampleHeight = Parameters.DownSampleSize?.Item2 ?? 0;
+                bool allowUpscale = Parameters.AllowUpscale ?? Configuration.AllowUpscale;
 
-                string ext = null;
-                if (!string.IsNullOrWhiteSpace(path))
+                if (Parameters.DownSampleUseDipUnits)
                 {
-                    if (source == ImageSource.Url && Uri.IsWellFormedUriString(path, UriKind.RelativeOrAbsolute))
-                        ext = Path.GetExtension(new Uri(path).LocalPath).ToLowerInvariant();
-                    else
-                        ext = Path.GetExtension(path).ToLowerInvariant();
+                    downsampleWidth = downsampleWidth.PointsToPixels();
+                    downsampleHeight = downsampleHeight.PointsToPixels();
                 }
-                
+
+                // Special case to handle WebP decoding on iOS
                 if (source != ImageSource.Stream && imageInformation.Type == ImageInformation.ImageType.WEBP)
                 {
-                    imageIn = new WebP.Touch.WebPCodec().Decode(imageData);
+                    var decodedWebP = new WebP.Touch.WebPCodec().Decode(imageData);
+                    //TODO Add WebP images downsampling!
+                    imageIn = decodedWebP;
                 }
                 else
                 {
                     var nsdata = NSData.FromStream(imageData);
-                    int downsampleWidth = Parameters.DownSampleSize?.Item1 ?? 0;
-                    int downsampleHeight = Parameters.DownSampleSize?.Item2 ?? 0;
-                    bool allowUpscale = Parameters.AllowUpscale ?? Configuration.AllowUpscale;
-
-                    if (Parameters.DownSampleUseDipUnits)
-                    {
-                        downsampleWidth = downsampleWidth.PointsToPixels();
-                        downsampleHeight = downsampleHeight.PointsToPixels();
-                    }
-
-                    imageIn = nsdata.ToImage(new CoreGraphics.CGSize(downsampleWidth, downsampleHeight), ScaleHelper.Scale, NSDataExtensions.RCTResizeMode.ScaleAspectFill, imageInformation, allowUpscale);
+                    imageIn = nsdata.ToImage(new CoreGraphics.CGSize(downsampleWidth, downsampleHeight), ScaleHelper.Scale, Configuration, Parameters, NSDataExtensions.RCTResizeMode.ScaleAspectFill, imageInformation, allowUpscale);
                 }
             }
             finally
@@ -89,27 +83,68 @@ namespace FFImageLoading.Work
 
                 try
                 {
-                    foreach (var transformation in transformations)
+                    if (imageIn.Images == null)
                     {
-                        ThrowIfCancellationRequested();
+                        foreach (var transformation in transformations)
+                        {
+                            ThrowIfCancellationRequested();
 
-                        var old = imageIn;
+                            var old = imageIn;
 
-                        try
-                        {
-                            var bitmapHolder = transformation.Transform(new BitmapHolder(imageIn), path, source, isPlaceholder, Key);
-                            imageIn = bitmapHolder.ToNative();
+                            try
+                            {
+                                var bitmapHolder = transformation.Transform(new BitmapHolder(imageIn), path, source, isPlaceholder, Key);
+                                imageIn = bitmapHolder.ToNative();
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Error(string.Format("Transformation failed: {0}", transformation.Key), ex);
+                                throw;
+                            }
+                            finally
+                            {
+                                if (old != null && old != imageIn && old.Handle != imageIn.Handle)
+                                    old.Dispose();
+                            }
                         }
-                        catch (Exception ex)
+                    }
+                    else
+                    {
+                        var animatedImages = imageIn.Images.ToArray();
+
+                        for (int i = 0; i < animatedImages.Length; i++)
                         {
-                            Logger.Error(string.Format("Transformation failed: {0}", transformation.Key), ex);
-                            throw;
+                            var tempImage = animatedImages[i];
+
+                            foreach (var transformation in transformations)
+                            {
+                                ThrowIfCancellationRequested();
+
+                                var old = tempImage;
+
+                                try
+                                {
+                                    var bitmapHolder = transformation.Transform(new BitmapHolder(tempImage), path, source, isPlaceholder, Key);
+                                    tempImage = bitmapHolder.ToNative();
+                                }
+                                catch (Exception ex)
+                                {
+                                    Logger.Error(string.Format("Transformation failed: {0}", transformation.Key), ex);
+                                    throw;
+                                }
+                                finally
+                                {
+                                    if (old != null && old != tempImage && old.Handle != tempImage.Handle)
+                                        old.Dispose();
+                                }
+                            }
+
+                            animatedImages[i] = tempImage;
                         }
-                        finally
-                        {
-                            if (old != null && old != imageIn && old.Handle != imageIn.Handle)
-                                old.Dispose();
-                        }
+
+                        var oldImageIn = imageIn;
+                        imageIn = UIImage.CreateAnimatedImage(animatedImages, imageIn.Duration);
+                        oldImageIn?.Dispose();
                     }
                 }
                 finally

@@ -17,6 +17,7 @@ namespace FFImageLoading.Svg.Forms
 
         public SvgCachedImage() : base()
         {
+            ReplaceStringMap = new Dictionary<string, string>();
         }
 
         /// <summary>
@@ -127,7 +128,7 @@ namespace FFImageLoading.Svg.Forms
         /// replace text inside SVG file (eg. changing colors values)
         /// </summary>
         /// <value>The replace string map.</value>
-        Dictionary<string, string> ReplaceStringMap
+        public Dictionary<string, string> ReplaceStringMap
         {
             get
             {

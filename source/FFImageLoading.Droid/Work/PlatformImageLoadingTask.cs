@@ -88,7 +88,7 @@ namespace FFImageLoading
             image?.SetIsRetained(false);
         }
 
-        async Task<SelfDisposingBitmapDrawable> PlatformGenerateImageAsync(string path, ImageSource source, Stream imageData, ImageInformation imageInformation, bool enableTransformations, bool isPlaceholder)
+        async Task<Bitmap> PlatformGenerateBitmapAsync(string path, ImageSource source, Stream imageData, ImageInformation imageInformation, bool enableTransformations, bool isPlaceholder, BitmapFactory.Options options = null)
         {
             Bitmap bitmap = null;
 
@@ -97,15 +97,17 @@ namespace FFImageLoading
 
             ThrowIfCancellationRequested();
 
-            // First decode with inJustDecodeBounds=true to check dimensions
-            var options = new BitmapFactory.Options
-            {
-                InJustDecodeBounds = true
-            };
-
             try
             {
-                await BitmapFactory.DecodeStreamAsync(imageData, null, options).ConfigureAwait(false);
+                if (options == null)
+                {
+                    // First decode with inJustDecodeBounds=true to check dimensions
+                    options = new BitmapFactory.Options
+                    {
+                        InJustDecodeBounds = true,
+                    };
+                    await BitmapFactory.DecodeStreamAsync(imageData, null, options).ConfigureAwait(false);
+                }
 
                 ThrowIfCancellationRequested();
 
@@ -180,6 +182,13 @@ namespace FFImageLoading
 
             ThrowIfCancellationRequested();
 
+            bitmap = await PlatformTransformAsync(path, source, enableTransformations, isPlaceholder, bitmap);
+
+            return bitmap;
+        }
+
+        async Task<Bitmap> PlatformTransformAsync(string path, ImageSource source, bool enableTransformations, bool isPlaceholder, Bitmap bitmap)
+        {
             if (enableTransformations && Parameters.Transformations != null && Parameters.Transformations.Count > 0)
             {
                 var transformations = Parameters.Transformations.ToList();
@@ -221,6 +230,13 @@ namespace FFImageLoading
                 }
             }
 
+            return bitmap;
+        }
+
+        async Task<SelfDisposingBitmapDrawable> PlatformGenerateImageAsync(string path, ImageSource source, Stream imageData, ImageInformation imageInformation, bool enableTransformations, bool isPlaceholder)
+        {
+            var bitmap = await PlatformGenerateBitmapAsync(path, source, imageData, imageInformation, enableTransformations, isPlaceholder);
+
             if (isPlaceholder)
             {
                 return new SelfDisposingBitmapDrawable(Context.Resources, bitmap);
@@ -238,8 +254,26 @@ namespace FFImageLoading
 
             try
             {
-                //TODO Add caching, transformations, downsampling, etc
-                var gifDecoder = new GifDecoder();
+                int downsampleWidth = 0;
+                int downsampleHeight = 0;
+
+                if (Parameters.DownSampleSize != null && (Parameters.DownSampleSize.Item1 > 0 || Parameters.DownSampleSize.Item2 > 0))
+                {
+                    downsampleWidth = Parameters.DownSampleSize.Item1;
+                    downsampleHeight = Parameters.DownSampleSize.Item2;
+                }
+
+                if (Parameters.DownSampleUseDipUnits)
+                {
+                    downsampleWidth = downsampleWidth.DpToPixels();
+                    downsampleHeight = downsampleHeight.DpToPixels();
+                }
+
+                var gifDecoder = new GifDecoder(downsampleWidth, downsampleHeight, (bmp) =>
+                {
+                    return PlatformTransformAsync(path, source, enableTransformations, isPlaceholder, bmp);
+                });
+
                 await gifDecoder.ReadGifAsync(imageData);
                 ThrowIfCancellationRequested();
                 var bitmap = gifDecoder.GetBitmap();
@@ -258,16 +292,7 @@ namespace FFImageLoading
             {
                 SelfDisposingBitmapDrawable image = null;
 
-                string ext = null;
-                if (!string.IsNullOrWhiteSpace(path))
-                {
-                    if (source == ImageSource.Url && Uri.IsWellFormedUriString(path, UriKind.RelativeOrAbsolute))
-                        ext = System.IO.Path.GetExtension(new Uri(path).LocalPath).ToLowerInvariant();
-                    else
-                        ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
-                }
-
-                if (source != ImageSource.Stream && imageInformation.Type == ImageInformation.ImageType.GIF && GifDecoder.CheckIfAnimated(imageData))
+                if (imageInformation.Type == ImageInformation.ImageType.GIF && Configuration.AnimateGifs && GifDecoder.CheckIfAnimated(imageData))
                 {
                     image = await PlatformGenerateGifImageAsync(path, source, imageData, imageInformation, enableTransformations, isPlaceholder);
                 }
@@ -304,7 +329,7 @@ namespace FFImageLoading
         /// <param name="reqHeight"></param>
         /// <param name="allowUpscale"></param>
         /// <returns></returns>
-        int CalculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight, bool allowUpscale)
+        public static int CalculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight, bool allowUpscale)
         {
             // Raw height and width of image
             float height = options.OutHeight;
