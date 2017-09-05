@@ -11,22 +11,22 @@ using FFImageLoading.Helpers;
 
 namespace FFImageLoading.Cache
 {
-	/// <summary>
-	/// Disk cache iOS/Android implementation.
-	/// </summary>
-	public class SimpleDiskCache : IDiskCache
+    /// <summary>
+    /// Disk cache iOS/Android implementation.
+    /// </summary>
+    public class SimpleDiskCache : IDiskCache
     {
-		const int BufferSize = 4096; // Xamarin large object heap threshold is 8K
-		string _cachePath;
-		ConcurrentDictionary<string, byte> _fileWritePendingTasks = new ConcurrentDictionary<string, byte>();
+        const int BufferSize = 4096; // Xamarin large object heap threshold is 8K
+        string _cachePath;
+        ConcurrentDictionary<string, byte> _fileWritePendingTasks = new ConcurrentDictionary<string, byte>();
         readonly SemaphoreSlim _currentWriteLock = new SemaphoreSlim(1, 1);
         Task _currentWrite = Task.FromResult<byte>(1);
-		ConcurrentDictionary<string, CacheEntry> _entries = new ConcurrentDictionary<string, CacheEntry> ();
+        ConcurrentDictionary<string, CacheEntry> _entries = new ConcurrentDictionary<string, CacheEntry>();
 
-		/// <summary>
-		/// Initializes a new instance of the <see cref="FFImageLoading.Cache.SimpleDiskCache"/> class.
-		/// </summary>
-		/// <param name="cachePath">Cache path.</param>
+        /// <summary>
+        /// Initializes a new instance of the <see cref="FFImageLoading.Cache.SimpleDiskCache"/> class.
+        /// </summary>
+        /// <param name="cachePath">Cache path.</param>
         public SimpleDiskCache(string cachePath, Configuration configuration)
         {
             _cachePath = Path.GetFullPath(cachePath);
@@ -36,8 +36,8 @@ namespace FFImageLoading.Cache
 
             if (!Directory.Exists(_cachePath))
                 Directory.CreateDirectory(_cachePath);
-            
-			InitializeEntries();
+
+            InitializeEntries();
 
             ThreadPool.QueueUserWorkItem(CleanCallback);
         }
@@ -56,6 +56,17 @@ namespace FFImageLoading.Cache
             var context = new Android.Content.ContextWrapper(Android.App.Application.Context);
             string tmpPath = context.CacheDir.AbsolutePath;
             string cachePath = Path.Combine(tmpPath, cacheName);
+
+            Java.IO.File androidTempFolder = new Java.IO.File(cachePath);
+            if (!androidTempFolder.Exists())
+                androidTempFolder.Mkdir();
+
+            if (!androidTempFolder.CanRead())
+                androidTempFolder.SetReadable(true, false);
+
+            if (!androidTempFolder.CanWrite())
+                androidTempFolder.SetWritable(true, false);
+
 #else
             var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
             string tmpPath = Path.Combine(documents, "..", "Library", "Caches");
@@ -187,7 +198,7 @@ namespace FFImageLoading.Cache
 			catch
 			{
 				return null;
-			}	
+			}
 		}
 
 		public virtual Task<string> GetFilePathAsync(string key)
@@ -195,7 +206,7 @@ namespace FFImageLoading.Cache
 			CacheEntry entry;
 			if (!_entries.TryGetValue(key, out entry))
 				return Task.FromResult<string>(null);
-			
+
 			return Task.FromResult(Path.Combine(_cachePath, entry.FileName));
 		}
 
@@ -236,15 +247,15 @@ namespace FFImageLoading.Cache
 			foreach (var kvp in kvps)
 			{
 				CacheEntry oldCacheEntry;
-				if (_entries.TryRemove(kvp.Key, out oldCacheEntry)) 
+				if (_entries.TryRemove(kvp.Key, out oldCacheEntry))
 				{
-					try 
+					try
 					{
                         Logger.Debug(string.Format("SimpleDiskCache: Removing expired file {0}", kvp.Key));
 						File.Delete(Path.Combine(_cachePath, kvp.Key));
-					} 
+					}
 					// Analysis disable once EmptyGeneralCatchClause
-					catch 
+					catch
 					{
 					}
 				}

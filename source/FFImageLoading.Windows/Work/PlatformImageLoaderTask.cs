@@ -40,7 +40,7 @@ namespace FFImageLoading.Work
             ThrowIfCancellationRequested();
 
             try
-            {              
+            {
                 bool allowUpscale = Parameters.AllowUpscale ?? Configuration.AllowUpscale;
                 if (source != ImageSource.Stream && imageInformation.Type == ImageInformation.ImageType.WEBP)
                 {
@@ -66,7 +66,8 @@ namespace FFImageLoading.Work
             {
                 var transformations = Parameters.Transformations.ToList();
 
-                await _decodingLock.WaitAsync().ConfigureAwait(false); // Applying transformations is both CPU and memory intensive
+                await _decodingLock.WaitAsync(CancellationTokenSource.Token).ConfigureAwait(false); // Applying transformations is both CPU and memory intensive
+                ThrowIfCancellationRequested();
 
                 try
                 {

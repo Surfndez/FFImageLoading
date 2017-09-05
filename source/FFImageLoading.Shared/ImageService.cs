@@ -51,7 +51,7 @@ namespace FFImageLoading
         }
 
         /// <summary>
-        /// Initializes FFImageLoading with a default Configuration. 
+        /// Initializes FFImageLoading with a default Configuration.
         /// Also forces to run disk cache cleaning routines (avoiding delay for first image loading tasks)
         /// </summary>
         /// <param name="configuration">Configuration.</param>
@@ -140,6 +140,11 @@ namespace FFImageLoading
 
                 var downloadCache = userDefinedConfig.DownloadCache ?? new DownloadCache(userDefinedConfig);
                 userDefinedConfig.DownloadCache = downloadCache;
+
+#if WINDOWS
+                // To resolve this Windows issues: https://github.com/luberda-molinet/FFImageLoading/issues/439
+                userDefinedConfig.ExecuteCallbacksOnUIThread = true;
+#endif
 
                 Config = userDefinedConfig;
 
