@@ -289,6 +289,17 @@ namespace FFImageLoading.Work
                 if (Parameters.Preload && Parameters.CacheType.HasValue && Parameters.CacheType.Value == CacheType.Disk)
                     return false;
 
+                if (Parameters.DelayInMs.HasValue && Parameters.DelayInMs.Value > 0)
+                {
+                    await Task.Delay(Parameters.DelayInMs.Value).ConfigureAwait(false);
+                }
+                else if (Configuration.DelayInMs > 0)
+                {
+                    await Task.Delay(Configuration.DelayInMs).ConfigureAwait(false); ;
+                }
+
+                ThrowIfCancellationRequested();
+
                 bool isFadeAnimationEnabledForCached = Parameters.FadeAnimationForCachedImagesEnabled.HasValue ? Parameters.FadeAnimationForCachedImagesEnabled.Value : Configuration.FadeAnimationForCachedImages;
                 var result = await TryLoadFromMemoryCacheAsync(Key, true, isFadeAnimationEnabledForCached, false).ConfigureAwait(false);
 
@@ -401,12 +412,13 @@ namespace FFImageLoading.Work
                     var loadResolver = customResolver ?? DataResolverFactory.GetResolver(path, source, Parameters, Configuration);
                     loadResolver = new WrappedDataResolver(loadResolver);
                     Tuple<Stream, LoadingResult, ImageInformation> loadImageData;
-                    bool hasMutex = false;
                     TImageContainer loadImage;
 
+                    if (!await _placeholdersResolveLock.WaitAsync(TimeSpan.FromSeconds(10), CancellationTokenSource.Token).ConfigureAwait(false))
+                        return;
+
                     try
-                    {
-                        hasMutex = await _placeholdersResolveLock.WaitAsync(TimeSpan.FromSeconds(3), CancellationTokenSource.Token).ConfigureAwait(false);
+                    {                        
                         ThrowIfCancellationRequested();
 
                         if (await TryLoadFromMemoryCacheAsync(key, false, false, isLoadingPlaceholder).ConfigureAwait(false))
@@ -430,8 +442,7 @@ namespace FFImageLoading.Work
                     }
                     finally
                     {
-                        if (hasMutex)
-                            _placeholdersResolveLock.Release();
+                        _placeholdersResolveLock.Release();
                     }
 
                     ThrowIfCancellationRequested();
@@ -462,11 +473,6 @@ namespace FFImageLoading.Work
 
             try
             {
-                if (IsCompleted || IsCancelled || ImageService.ExitTasksEarly)
-                    throw new OperationCanceledException();
-
-                ThrowIfCancellationRequested();
-
                 // LOAD IMAGE
                 if (!(await TryLoadFromMemoryCacheAsync().ConfigureAwait(false)))
                 {

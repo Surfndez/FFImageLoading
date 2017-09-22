@@ -12,9 +12,9 @@ using System.Threading;
 
 namespace FFImageLoading.Views
 {
-	public class ManagedImageView : ImageView
+    public class ManagedImageView : ImageView
 	{
-		private WeakReference<Drawable> _drawableRef = null;
+		WeakReference<Drawable> _drawableRef;
         CancellationTokenSource _tcs;
 
 		public ManagedImageView(IntPtr javaReference, JniHandleOwnership transfer) : base(javaReference, transfer)
@@ -33,62 +33,92 @@ namespace FFImageLoading.Views
         {
         }
 
-		protected override void Dispose(bool disposing)
-		{
-            _tcs?.Cancel();
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                try
+                {
+                    CancelGifPlay();
+                    _tcs?.Dispose();
+                }
+                catch (Exception) { }
 
-			if (_drawableRef != null)
-			{
-				Drawable drawable = null;
+                if (_drawableRef != null)
+                {
+                    Drawable drawable = null;
 
-				if (_drawableRef.TryGetTarget(out drawable))
-				{
-					UpdateDrawableDisplayedState(drawable, false);
-				}
+                    if (_drawableRef.TryGetTarget(out drawable))
+                    {
+                        UpdateDrawableDisplayedState(drawable, false);
+                    }
 
-				_drawableRef = null;
-			}
+                    _drawableRef = null;
+                }
+            }
 
-			base.Dispose(disposing);
-		}
+            base.Dispose(disposing);
+        }
 
-        async void PlayGif(FFGifDrawable gifDrawable, CancellationToken token)
+        void CancelGifPlay()
         {
             try
             {
-                var gifDecoder = gifDrawable.GifDecoder;
-                int n = gifDecoder.GetFrameCount();
-                //int ntimes = gifDecoder.GetLoopCount();
-                //TODO DISABLED for endless loop
-                int ntimes = 0;
-                int repetitionCounter = 0;
-
-                do
-                {
-                    token.ThrowIfCancellationRequested();
-
-                    for (int i = 0; i < n; i++)
-                    {
-                        token.ThrowIfCancellationRequested();
-                        var bitmap = gifDecoder.GetFrame(i);
-                        int t = gifDecoder.GetDelay(i);
-                        token.ThrowIfCancellationRequested();
-
-                        if (bitmap != null && bitmap.Handle != IntPtr.Zero && !bitmap.IsRecycled)
-                            SetImageBitmap(bitmap);
-
-                        token.ThrowIfCancellationRequested();
-                        await Task.Delay(t);
-                    }
-                    if (ntimes != 0)
-                    {
-                        repetitionCounter++;
-                    }
-                }
-                while (repetitionCounter <= ntimes);
+                _tcs?.Cancel();
             }
             catch (ObjectDisposedException) { }
-            catch (OperationCanceledException) { }
+        }
+
+        void PlayGif(FFGifDrawable gifDrawable, CancellationTokenSource tokenSource)
+        {
+            var token = tokenSource.Token;
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    token.ThrowIfCancellationRequested();
+                    var gifDecoder = gifDrawable.GifDecoder;
+                    int n = gifDecoder.GetFrameCount();
+                    //int ntimes = gifDecoder.GetLoopCount();
+                    //TODO DISABLED for endless loop
+                    int ntimes = 0;
+                    int repetitionCounter = 0;
+
+                    do
+                    {
+                        for (int i = 0; i < n; i++)
+                        {
+                            token.ThrowIfCancellationRequested();
+                            var bitmap = gifDecoder.GetFrame(i);
+                            int t = gifDecoder.GetDelay(i);
+
+                            if (bitmap != null && bitmap.Handle != IntPtr.Zero && !bitmap.IsRecycled)
+                            {
+                                await MainThreadDispatcher.Instance.PostAsync(() => base.SetImageBitmap(bitmap)).ConfigureAwait(false);
+                            }
+
+                            token.ThrowIfCancellationRequested();
+                            await Task.Delay(t, token).ConfigureAwait(false);
+                        }
+                        if (ntimes != 0)
+                        {
+                            repetitionCounter++;
+                        }
+                    } while (repetitionCounter <= ntimes);
+                }
+                catch (Exception)
+                {
+                }
+                finally
+                {
+                    try
+                    {
+                        tokenSource?.Dispose();
+                    }
+                    catch (Exception) { }
+                }
+            }, token);
         }
 
 		/* FMT: this is not fine when working with RecyclerView... It can detach and cache the view, then reattach it
@@ -108,55 +138,41 @@ namespace FFImageLoading.Views
                 ImageService.Instance.CancelWorkFor(ImageLoaderTask);
                 ImageLoaderTask = null;
             }
-
         }
 
 		public override void SetImageDrawable(Drawable drawable)
 		{
+            var previous = Drawable;
+
             var gifDrawable = drawable as FFGifDrawable;
             if (gifDrawable != null)
             {
-                _tcs?.Cancel();
+                CancelGifPlay();
                 _tcs = new CancellationTokenSource();
 
-                var previous = Drawable;
                 _drawableRef = new WeakReference<Drawable>(drawable);
-                base.SetImageDrawable(drawable);
                 UpdateDrawableDisplayedState(drawable, true);
                 UpdateDrawableDisplayedState(previous, false);
 
-                PlayGif(gifDrawable, _tcs.Token);
-
-                return;
-            }
-
-            GifDecoder currenGifDecoder = null;
-            Drawable currentDrawable = null;
-            if (_drawableRef != null && _drawableRef.TryGetTarget(out currentDrawable) && currentDrawable != null)
-            {
-                var currentGifDrawable = currentDrawable as FFGifDrawable;
-                currenGifDecoder = currentGifDrawable?.GifDecoder;
-            }
-
-            var bitmapDrawable = drawable as BitmapDrawable;
-            if (bitmapDrawable == null || currenGifDecoder == null || !currenGifDecoder.ContainsBitmap(bitmapDrawable?.Bitmap))
-            {
-                _tcs?.Cancel();
-                var previous = Drawable;
-                _drawableRef = new WeakReference<Drawable>(drawable);
-                base.SetImageDrawable(drawable);
-                UpdateDrawableDisplayedState(drawable, true);
-                UpdateDrawableDisplayedState(previous, false);
+                PlayGif(gifDrawable, _tcs);
             }
             else
             {
+                if (drawable == null || drawable is ISelfDisposingBitmapDrawable)
+                {
+                    CancelGifPlay();
+                }
+
+                _drawableRef = new WeakReference<Drawable>(drawable);
                 base.SetImageDrawable(drawable);
+                UpdateDrawableDisplayedState(drawable, true);
+                UpdateDrawableDisplayedState(previous, false);
             }
 		}
 
 		public override void SetImageResource(int resId)
 		{
-            _tcs?.Cancel();
+            CancelGifPlay();
 
             var previous = Drawable;
             // Ultimately calls SetImageDrawable, where the state will be updated.
@@ -167,7 +183,7 @@ namespace FFImageLoading.Views
 
 		public override void SetImageURI(global::Android.Net.Uri uri)
 		{
-            _tcs?.Cancel();
+            CancelGifPlay();
 
             var previous = Drawable;
             // Ultimately calls SetImageDrawable, where the state will be updated.
@@ -176,7 +192,7 @@ namespace FFImageLoading.Views
             UpdateDrawableDisplayedState(previous, false);
 		}
 
-		private void UpdateDrawableDisplayedState(Drawable drawable, bool isDisplayed)
+		void UpdateDrawableDisplayedState(Drawable drawable, bool isDisplayed)
 		{
 			if (drawable == null || drawable.Handle == IntPtr.Zero)
 				return;

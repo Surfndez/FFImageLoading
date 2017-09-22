@@ -4,12 +4,12 @@ namespace FFImageLoading
 {
     public class PlatformPerformance : IPlatformPerformance
     {
-        public static IPlatformPerformance Create()
+        public static IPlatformPerformance Create(bool verbose)
         {
             return new PlatformPerformance();
         }
 
-        private PlatformPerformance()
+        public PlatformPerformance()
         {
         }
 

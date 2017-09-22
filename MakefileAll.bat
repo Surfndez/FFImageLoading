@@ -5,6 +5,7 @@ set warnings=1591,1572,1573,1570,3245
 if "%CI%"=="True" (
     set logger=/l:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 )
+set buildargsRelease=/p:Configuration="Release" /p:Platform="%platform%" /p:NoWarn="%warnings%" /v:minimal %logger%
 set buildargs=/p:Configuration="%config%" /p:Platform="%platform%" /p:NoWarn="%warnings%" /v:minimal %logger%
 set buildargsTests=/p:Configuration="Debug" /p:Platform="%platform%" /p:NoWarn="%warnings%" /v:minimal %logger%
 
@@ -18,6 +19,7 @@ echo Building FFImageLoading...
 %msbuild% source/FFImageLoading.BaitAndSwitch/FFImageLoading.BaitAndSwitch.csproj %buildargs%
 %msbuild% source/FFImageLoading.Windows/FFImageLoading.Windows.csproj %buildargs%
 %msbuild% source/FFImageLoading.Touch/FFImageLoading.Touch.csproj %buildargs%
+%msbuild% source/FFImageLoading.MacOs/FFImageLoading.MacOs.csproj %buildargsRelease%
 %msbuild% source/FFImageLoading.Droid/FFImageLoading.Droid.csproj %buildargs%
 
 echo Building FFImageLoading.Transformations...
@@ -49,10 +51,6 @@ echo Unit testing...
 
 %msbuild% source/Tests/FFImageLoading.Core.Tests/FFImageLoading.Core.Tests.csproj %buildargsTests%
 xunit.console.clr4 source/Tests/FFImageLoading.Core.Tests/bin/Debug/FFImageLoading.Core.Tests.dll /appveyor
-
-echo Generating symbols with Gitlink...
-
-GitLink.exe %~dp0 -u https://github.com/luberda-molinet/FFImageLoading
 
 echo Packaging NuGets...
 

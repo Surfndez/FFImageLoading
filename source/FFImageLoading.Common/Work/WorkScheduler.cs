@@ -142,7 +142,6 @@ namespace FFImageLoading.Work
 
                 if (Configuration.VerbosePerformanceLogging && (_loadCount % 10) == 0)
                 {
-
     				LogSchedulerStats();
                 }
 
@@ -151,11 +150,6 @@ namespace FFImageLoading.Work
                     Logger.Error("ImageService: null path ignored");
                     task?.Dispose();
                     return;
-                }
-
-                if (task.Parameters.DelayInMs != null && task.Parameters.DelayInMs > 0)
-                {
-                    await Task.Delay(task.Parameters.DelayInMs.Value).ConfigureAwait(false);
                 }
 
                 await task.Init();

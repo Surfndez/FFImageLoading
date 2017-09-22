@@ -14,6 +14,8 @@ using System.Threading.Tasks;
 using FFImageLoading.Forms.Args;
 using FFImageLoading.Helpers;
 using FFImageLoading.Views;
+using Android.Views;
+using System.Reflection;
 
 [assembly: ExportRenderer(typeof(CachedImage), typeof(CachedImageRenderer))]
 namespace FFImageLoading.Forms.Droid
@@ -31,9 +33,10 @@ namespace FFImageLoading.Forms.Droid
 		{
         }
 
-        private bool _isDisposed;
-		private IScheduledWork _currentTask;
-		private ImageSourceBinding _lastImageSource;
+        bool _isDisposed;
+		IScheduledWork _currentTask;
+		ImageSourceBinding _lastImageSource;
+        readonly MotionEventHelper _motionEventHelper = new MotionEventHelper();
 
 		public CachedImageRenderer()
 		{
@@ -45,35 +48,54 @@ namespace FFImageLoading.Forms.Droid
 			AutoPackage = false;
 		}
 
-		protected override void Dispose(bool disposing)
-		{
-			if (!_isDisposed)
-			{
-				_isDisposed = true;
-				base.Dispose(disposing);
-			}
-		}
+        public override bool OnTouchEvent(MotionEvent e)
+        {
+            if (base.OnTouchEvent(e))
+                return true;
+
+            return _motionEventHelper.HandleMotionEvent(Parent, e);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (!_isDisposed)
+            {
+                _isDisposed = true;
+                CancelIfNeeded();
+            }
+
+            base.Dispose(disposing);
+        }
 
 		protected override void OnElementChanged(ElementChangedEventArgs<CachedImage> e)
 		{
 			base.OnElementChanged(e);
 
-			if (e.OldElement == null)
-			{
-				var nativeControl = new CachedImageView(Context);
-				SetNativeControl(nativeControl);
-			}
+            if (Control == null)
+            {
+                var nativeControl = new CachedImageView(Context);
+                SetNativeControl(nativeControl);
+            }
+
+            if (e.OldElement != null)
+            {
+                e.OldElement.InternalReloadImage = null;
+                e.OldElement.InternalCancel = null;
+                e.OldElement.InternalGetImageAsJPG = null;
+                e.OldElement.InternalGetImageAsPNG = null;
+            }
 
 			if (e.NewElement != null)
 			{
 				e.NewElement.InternalReloadImage = new Action(ReloadImage);
-				e.NewElement.InternalCancel = new Action(Cancel);
+                e.NewElement.InternalCancel = new Action(CancelIfNeeded);
 				e.NewElement.InternalGetImageAsJPG = new Func<GetImageAsJpgArgs, Task<byte[]>>(GetImageAsJpgAsync);
 				e.NewElement.InternalGetImageAsPNG = new Func<GetImageAsPngArgs, Task<byte[]>>(GetImageAsPngAsync);
-			}
 
-			UpdateBitmap(e.OldElement);
-			UpdateAspect();
+                _motionEventHelper.UpdateElement(e.NewElement);
+                UpdateBitmap(Control, Element, e.OldElement);
+                UpdateAspect();
+			}
 		}
 
 		protected override void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -82,7 +104,7 @@ namespace FFImageLoading.Forms.Droid
 
 			if (e.PropertyName == CachedImage.SourceProperty.PropertyName)
 			{
-				UpdateBitmap(null);
+                UpdateBitmap(Control, Element, null);
 			}
 			if (e.PropertyName == CachedImage.AspectProperty.PropertyName)
 			{
@@ -90,7 +112,12 @@ namespace FFImageLoading.Forms.Droid
 			}
 		}
 
-		private void UpdateAspect()
+        protected override CachedImageView CreateNativeControl()
+        {
+            return new CachedImageView(Context);
+        }
+
+		void UpdateAspect()
 		{
 			if (Element.Aspect == Aspect.AspectFill)
 				Control.SetScaleType(ImageView.ScaleType.CenterCrop);
@@ -102,268 +129,100 @@ namespace FFImageLoading.Forms.Droid
 				Control.SetScaleType(ImageView.ScaleType.FitCenter);
 		}
 
-		private void UpdateBitmap(CachedImage previous = null)
+        void UpdateBitmap(CachedImageView imageView, CachedImage image, CachedImage previousImage)
 		{
-			Xamarin.Forms.ImageSource source = Element.Source;
+            CancelIfNeeded();
 
-			var imageView = Control;
+            if (image == null || imageView == null || imageView.Handle == IntPtr.Zero || _isDisposed)
+                return;
 
-			var ffSource = ImageSourceBinding.GetImageSourceBinding(source, Element);
-			var placeholderSource = ImageSourceBinding.GetImageSourceBinding(Element.LoadingPlaceholder, Element);
+            var ffSource = ImageSourceBinding.GetImageSourceBinding(image.Source, image);
+            if (ffSource == null)
+            {
+                if (_lastImageSource == null)
+                    return;
 
-			if (previous != null && _lastImageSource != null && ffSource != null && !ffSource.Equals(_lastImageSource)
-				&& (string.IsNullOrWhiteSpace(placeholderSource?.Path) || placeholderSource?.Stream != null))
-			{
-				_lastImageSource = null;
+                _lastImageSource = null;
+                imageView.SetImageResource(global::Android.Resource.Color.Transparent);
+                return;
+            }
 
-				if (imageView != null)
-					imageView.SkipInvalidate();
+            if (previousImage != null && !ffSource.Equals(_lastImageSource))
+            {
+                _lastImageSource = null;
+                imageView.SkipInvalidate();
+                Control.SetImageResource(global::Android.Resource.Color.Transparent);
+            }
 
-				Control.SetImageResource(global::Android.Resource.Color.Transparent);
-			}
+            image.SetIsLoading(true);
 
-			Element.SetIsLoading(true);
+            var placeholderSource = ImageSourceBinding.GetImageSourceBinding(image.LoadingPlaceholder, image);
+            var errorPlaceholderSource = ImageSourceBinding.GetImageSourceBinding(image.ErrorPlaceholder, image);
+            TaskParameter imageLoader;
+            image.SetupOnBeforeImageLoading(out imageLoader, ffSource, placeholderSource, errorPlaceholderSource);
 
-			if (Element != null && object.Equals(Element.Source, source) && !_isDisposed)
-			{
-				Cancel();
-				TaskParameter imageLoader = null;
+            if (imageLoader != null)
+            {
+                var finishAction = imageLoader.OnFinish;
+                var sucessAction = imageLoader.OnSuccess;
 
-				if (ffSource == null)
-				{
-					//if (imageView != null)
-						imageView.SetImageResource(global::Android.Resource.Color.Transparent);
+                imageLoader.Finish((work) =>
+                {
+                    finishAction?.Invoke(work);
+                    ImageLoadingFinished(image);
+                });
 
-					ImageLoadingFinished(Element);
-				}
-				else if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.Url)
-				{
-					imageLoader = ImageService.Instance.LoadUrl(ffSource.Path, Element.CacheDuration);
-				}
-				else if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.CompiledResource)
-				{
-					imageLoader = ImageService.Instance.LoadCompiledResource(ffSource.Path);
-				}
-				else if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.ApplicationBundle)
-				{
-					imageLoader = ImageService.Instance.LoadFileFromApplicationBundle(ffSource.Path);
-				}
-				else if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.Filepath)
-				{
-					imageLoader = ImageService.Instance.LoadFile(ffSource.Path);
-				}
-				else if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.Stream)
-				{
-					imageLoader = ImageService.Instance.LoadStream(ffSource.Stream);
-				}
-                else if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.EmbeddedResource)
-				{
-                    imageLoader = ImageService.Instance.LoadEmbeddedResource(ffSource.Path);
-				}
+                imageLoader.Success((imageInformation, loadingResult) =>
+                {
+                    sucessAction?.Invoke(imageInformation, loadingResult);
+                    _lastImageSource = ffSource;
+                });
 
-				if (imageLoader != null)
-				{
-					// CustomKeyFactory
-					if (Element.CacheKeyFactory != null)
-					{
-						var bindingContext = Element.BindingContext;
-						imageLoader.CacheKey(Element.CacheKeyFactory.GetKey(source, bindingContext));
-					}
-
-					// LoadingPlaceholder
-					if (Element.LoadingPlaceholder != null)
-					{
-						if (placeholderSource != null)
-							imageLoader.LoadingPlaceholder(placeholderSource.Path, placeholderSource.ImageSource);
-					}
-
-					// ErrorPlaceholder
-					if (Element.ErrorPlaceholder != null)
-					{
-						var errorPlaceholderSource = ImageSourceBinding.GetImageSourceBinding(Element.ErrorPlaceholder, Element);
-						if (errorPlaceholderSource != null)
-							imageLoader.ErrorPlaceholder(errorPlaceholderSource.Path, errorPlaceholderSource.ImageSource);
-					}
-
-					// Enable vector image source
-					var vect1 = Element.Source as IVectorImageSource;
-					var vect2 = Element.LoadingPlaceholder as IVectorImageSource;
-					var vect3 = Element.ErrorPlaceholder as IVectorImageSource;
-					if (vect1 != null)
-					{
-						imageLoader.WithCustomDataResolver(vect1.GetVectorDataResolver());
-					}
-					if (vect2 != null)
-					{
-						imageLoader.WithCustomLoadingPlaceholderDataResolver(vect2.GetVectorDataResolver());
-					}
-					if (vect3 != null)
-					{
-						imageLoader.WithCustomErrorPlaceholderDataResolver(vect3.GetVectorDataResolver());
-					}
-					if (Element.CustomDataResolver != null)
-					{
-						imageLoader.WithCustomDataResolver(Element.CustomDataResolver);
-						imageLoader.WithCustomLoadingPlaceholderDataResolver(Element.CustomDataResolver);
-						imageLoader.WithCustomErrorPlaceholderDataResolver(Element.CustomDataResolver);
-					}
-
-					// Downsample
-					if (Element.DownsampleToViewSize && (Element.Width > 0 || Element.Height > 0))
-					{
-						if (Element.Height > Element.Width)
-						{
-							imageLoader.DownSampleInDip(height: (int)Element.Height);
-						}
-						else
-						{
-							imageLoader.DownSampleInDip(width: (int)Element.Width);
-						}
-					}
-					else if (Element.DownsampleToViewSize && (Element.WidthRequest > 0 || Element.HeightRequest > 0))
-					{
-						if (Element.HeightRequest > Element.WidthRequest)
-						{
-							imageLoader.DownSampleInDip(height: (int)Element.HeightRequest);
-						}
-						else
-						{
-							imageLoader.DownSampleInDip(width: (int)Element.WidthRequest);
-						}
-					}
-					else if ((int)Element.DownsampleHeight != 0 || (int)Element.DownsampleWidth != 0)
-					{
-						if (Element.DownsampleHeight > Element.DownsampleWidth)
-						{
-							if (Element.DownsampleUseDipUnits)
-								imageLoader.DownSampleInDip(height: (int)Element.DownsampleHeight);
-							else
-								imageLoader.DownSample(height: (int)Element.DownsampleHeight);
-						}
-						else
-						{
-							if (Element.DownsampleUseDipUnits)
-								imageLoader.DownSampleInDip(width: (int)Element.DownsampleWidth);
-							else
-								imageLoader.DownSample(width: (int)Element.DownsampleWidth);
-						}
-					}
-
-					// RetryCount
-					if (Element.RetryCount > 0)
-					{
-						imageLoader.Retry(Element.RetryCount, Element.RetryDelay);
-					}
-
-					// TransparencyChannel
-					if (Element.TransparencyEnabled.HasValue)
-						imageLoader.TransparencyChannel(Element.TransparencyEnabled.Value);
-
-					if (Element.BitmapOptimizations.HasValue)
-						imageLoader.BitmapOptimizations(Element.BitmapOptimizations.Value);
-
-					// FadeAnimation
-					if (Element.FadeAnimationEnabled.HasValue)
-						imageLoader.FadeAnimation(Element.FadeAnimationEnabled.Value);
-
-					// TransformPlaceholders
-					if (Element.TransformPlaceholders.HasValue)
-						imageLoader.TransformPlaceholders(Element.TransformPlaceholders.Value);
-
-					// Transformations
-					if (Element.Transformations != null && Element.Transformations.Count > 0)
-					{
-						imageLoader.Transform(Element.Transformations);
-					}
-
-					imageLoader.WithPriority(Element.LoadingPriority);
-					if (Element.CacheType.HasValue)
-					{
-						imageLoader.WithCache(Element.CacheType.Value);
-					}
-
-					if (Element.LoadingDelay.HasValue)
-					{
-						imageLoader.Delay(Element.LoadingDelay.Value);
-					}
-
-					var element = Element;
-
-					imageLoader.Finish((work) =>
-					{
-						element.OnFinish(new CachedImageEvents.FinishEventArgs(work));
-						ImageLoadingFinished(element);
-					});
-
-					imageLoader.Success((imageInformation, loadingResult) =>
-					{
-						element.OnSuccess(new CachedImageEvents.SuccessEventArgs(imageInformation, loadingResult));
-						_lastImageSource = ffSource;
-					});
-
-					imageLoader.Error((exception) =>
-						element.OnError(new CachedImageEvents.ErrorEventArgs(exception)));
-
-					imageLoader.DownloadStarted((downloadInformation) =>
-						element.OnDownloadStarted(new CachedImageEvents.DownloadStartedEventArgs(downloadInformation)));
-
-					imageLoader.DownloadProgress((progress) =>
-						element.OnDownloadProgress(new CachedImageEvents.DownloadProgressEventArgs(progress)));
-
-					imageLoader.FileWriteFinished((fileWriteInfo) =>
-						element.OnFileWriteFinished(new CachedImageEvents.FileWriteFinishedEventArgs(fileWriteInfo)));
-
-                    element.SetupOnBeforeImageLoading(imageLoader);
-
-					_currentTask = imageLoader.Into(imageView);
-				}
-			}
+                _currentTask = imageLoader.Into(imageView);
+            }
 		}
 
-		private void ImageLoadingFinished(CachedImage element)
+		void ImageLoadingFinished(CachedImage element)
 		{
 			MainThreadDispatcher.Instance.Post(() =>
 			{
 				if (element != null && !_isDisposed)
 				{
-					Element.SetIsLoading(false);
 					((IVisualElementController)element).NativeSizeChanged();
+                    element.SetIsLoading(false);
 				}
 			});
 		}
 
-		private void ReloadImage()
+		void ReloadImage()
 		{
-			UpdateBitmap(null);
+			UpdateBitmap(Control, Element, null);
 		}
 
-		private void Cancel()
+		void CancelIfNeeded()
 		{
             try
             {
                 var taskToCancel = _currentTask;
                 if (taskToCancel != null && !taskToCancel.IsCancelled)
                 {
-                    taskToCancel?.Cancel();
+                    taskToCancel.Cancel();
                 }
             }
-            catch (Exception ex)
-            {
-                ImageService.Instance.Config.Logger.Error(ex.Message, ex);
-            }
+            catch (Exception) { }
 		}
 
-		private Task<byte[]> GetImageAsJpgAsync(GetImageAsJpgArgs args)
+		Task<byte[]> GetImageAsJpgAsync(GetImageAsJpgArgs args)
 		{
 			return GetImageAsByteAsync(Bitmap.CompressFormat.Jpeg, args.Quality, args.DesiredWidth, args.DesiredHeight);
 		}
 
-		private Task<byte[]> GetImageAsPngAsync(GetImageAsPngArgs args)
+		Task<byte[]> GetImageAsPngAsync(GetImageAsPngArgs args)
 		{
 			return GetImageAsByteAsync(Bitmap.CompressFormat.Png, 90, args.DesiredWidth, args.DesiredHeight);
 		}
 
-		private async Task<byte[]> GetImageAsByteAsync(Bitmap.CompressFormat format, int quality, int desiredWidth, int desiredHeight)
+		async Task<byte[]> GetImageAsByteAsync(Bitmap.CompressFormat format, int quality, int desiredWidth, int desiredHeight)
 		{
 			if (Control == null)
 				return null;
@@ -409,10 +268,73 @@ namespace FFImageLoading.Forms.Droid
 			}
 		}
 
-		protected override CachedImageView CreateNativeControl()
-		{
-			return new CachedImageView(Context);
-		}
+        internal class MotionEventHelper
+        {
+            VisualElement _element;
+            bool _isInViewCell;
+
+            public bool HandleMotionEvent(IViewParent parent, MotionEvent motionEvent)
+            {
+                if (_isInViewCell || _element.InputTransparent || motionEvent.Action == MotionEventActions.Cancel)
+                {
+                    return false;
+                }
+
+                var renderer = parent as VisualElementRenderer<Xamarin.Forms.View>;
+                if (renderer == null)
+                {
+                    return false;
+                }
+
+                var type = parent.GetType();
+                if (type.Name.Contains("DefaultRenderer"))
+                {
+                    try
+                    {
+                        // Let the container know that we're "fake" handling this event
+                        var method = type.GetTypeInfo().GetDeclaredMethod("NotifyFakeHandling");
+                        if (method != null)
+                        {
+                            method.Invoke(parent, null);
+                            return true;
+                        }
+                    }
+                    catch (Exception) { }
+                }
+
+                return false;
+            }
+
+            public void UpdateElement(VisualElement element)
+            {
+                _isInViewCell = false;
+                _element = element;
+
+                if (_element == null)
+                {
+                    return;
+                }
+
+                // Determine whether this control is inside a ViewCell;
+                // we don't fake handle the events because ListView needs them for row selection
+                _isInViewCell = IsInViewCell(element);
+            }
+
+            static bool IsInViewCell(VisualElement element)
+            {
+                var parent = element.Parent;
+                while (parent != null)
+                {
+                    if (parent is ViewCell)
+                    {
+                        return true;
+                    }
+                    parent = parent.Parent;
+                }
+
+                return false;
+            }
+        }
 	}
 }
 

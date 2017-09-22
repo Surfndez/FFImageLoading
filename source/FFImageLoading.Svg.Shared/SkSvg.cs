@@ -27,6 +27,11 @@ namespace FFImageLoading.Svg.Platform
         private static readonly Regex WSRe = new Regex(@"\s{2,}");
 
         private readonly Dictionary<string, XElement> defs = new Dictionary<string, XElement>();
+        private readonly XmlReaderSettings xmlReaderSettings = new XmlReaderSettings()
+        {
+            DtdProcessing = DtdProcessing.Ignore,
+            IgnoreComments = true,
+        };
 
         public SKSvg()
             : this(DefaultPPI, SKSize.Empty)
@@ -69,7 +74,7 @@ namespace FFImageLoading.Svg.Platform
             }
 
             // we know that there we can access the method via reflection
-            var args = new object[] { filename, null, CreateSvgXmlContext() };
+            var args = new object[] { filename, xmlReaderSettings, CreateSvgXmlContext() };
             using (var reader = (XmlReader)createReaderMethod.Invoke(null, args))
             {
                 return Load(reader);
@@ -84,7 +89,7 @@ namespace FFImageLoading.Svg.Platform
 
         public SKPicture Load(Stream stream)
         {
-            using (var reader = XmlReader.Create(stream, null, CreateSvgXmlContext()))
+            using (var reader = XmlReader.Create(stream, xmlReaderSettings, CreateSvgXmlContext()))
             {
                 return Load(reader);
             }

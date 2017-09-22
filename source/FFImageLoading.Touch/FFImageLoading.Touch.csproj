@@ -12,7 +12,7 @@
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
+    <DebugType>portable</DebugType>
     <Optimize>false</Optimize>
     <OutputPath>bin\Debug</OutputPath>
     <DefineConstants>DEBUG;</DefineConstants>
@@ -22,6 +22,7 @@
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release</OutputPath>
     <ErrorReport>prompt</ErrorReport>
@@ -30,6 +31,8 @@
     <DocumentationFile>bin\Release\FFImageLoading.Platform.xml</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Windows Debug|AnyCPU'">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>		
     <OutputPath>bin\Debug\</OutputPath>
     <DefineConstants>__UNIFIED__;__MOBILE__;__IOS__;</DefineConstants>
     <Optimize>true</Optimize>
@@ -44,6 +47,7 @@
     <DefineConstants>__UNIFIED__;__MOBILE__;__IOS__;</DefineConstants>
     <DocumentationFile>bin\Release\FFImageLoading.Platform.xml</DocumentationFile>
     <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
     <Optimize>true</Optimize>
     <PlatformTarget>anycpu</PlatformTarget>
     <UseVSHostingProcess>false</UseVSHostingProcess>
@@ -63,34 +67,14 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Targets\" />
-    <Folder Include="DataResolvers\" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Cache\ImageCache.cs" />
-    <Compile Include="Extensions\UIImageExtensions.cs" />
-    <Compile Include="Work\PlatformImageLoaderTask.cs" />
-    <Compile Include="TaskParameterExtensions.cs" />
-    <Compile Include="Work\BitmapHolder.cs" />
-    <Compile Include="Transformations\TransformationBase.cs" />
-    <Compile Include="Extensions\UnitsExtensions.cs" />
-    <Compile Include="Helpers\MainThreadDispatcher.cs" />
-    <Compile Include="Helpers\ScaleHelper.cs" />
-    <Compile Include="Extensions\NSDataExtensions.cs" />
-    <Compile Include="Helpers\PlatformPerformance.cs" />
-    <Compile Include="Extensions\ColorExtensions.cs" />
     <Compile Include="Targets\UIBarItemTarget.cs" />
     <Compile Include="Targets\UIButtonTarget.cs" />
-    <Compile Include="Targets\UIControlTarget.cs" />
-    <Compile Include="Targets\UIImageViewTarget.cs" />
-    <Compile Include="Targets\UIImageTarget.cs" />
-    <Compile Include="DataResolvers\BundleDataResolver.cs" />
-    <Compile Include="DataResolvers\DataResolverFactory.cs" />
-    <Compile Include="DataResolvers\FileDataResolver.cs" />
-    <Compile Include="DataResolvers\UrlDataResolver.cs" />
-    <Compile Include="DataResolvers\StreamDataResolver.cs" />
     <Compile Include="Helpers\GifHelper.cs" />
   </ItemGroup>
+  <Import Project="..\FFImageLoading.Shared.IosMac\FFImageLoading.Shared.IosMac.projitems" Label="Shared" Condition="Exists('..\FFImageLoading.Shared.IosMac\FFImageLoading.Shared.IosMac.projitems')" />
   <Import Project="..\FFImageLoading.Cross\FFImageLoading.Cross.projitems" Label="Shared" Condition="Exists('..\FFImageLoading.Cross\FFImageLoading.Cross.projitems')" />
   <Import Project="..\FFImageLoading.Shared\FFImageLoading.Shared.projitems" Label="Shared" Condition="Exists('..\FFImageLoading.Shared\FFImageLoading.Shared.projitems')" />
   <Import Project="$(MSBuildExtensionsPath)\Xamarin\iOS\Xamarin.iOS.CSharp.targets" />
