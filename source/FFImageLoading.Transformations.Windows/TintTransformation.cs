@@ -34,10 +34,10 @@ namespace FFImageLoading.Transformations
             {
                 _hexColor = value;
                 var color = value.ToColorFromHex();
-                R = (int)color.R;
-                G = (int)color.G;
-                B = (int)color.B;
-                A = (int)color.A;
+                A = color.A;
+                R = color.R;
+                G = color.G;
+                B = color.B;
             }
         }
 

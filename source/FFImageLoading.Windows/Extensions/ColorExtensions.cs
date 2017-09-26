@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FFImageLoading.Helpers;
+using System;
 using Windows.UI;
 
 namespace FFImageLoading.Extensions
@@ -7,7 +8,7 @@ namespace FFImageLoading.Extensions
     {
         public const int SizeOfArgb = 4;
 
-        public static int ToInt(this Color color)
+        public static int ToInt(this ColorHolder color)
         {
             var col = 0;
 
@@ -23,15 +24,21 @@ namespace FFImageLoading.Extensions
             return col;
         }
 
-        public static Color ToColorFromHex(this string hexColor)
+        public static ColorHolder Transparent = new ColorHolder(0, 255, 255, 255);
+
+        //public static int ToInt(int a, int r, int g, int b)
+        //{
+        //    byte[] bytes = new byte[] { Convert.ToByte(b), Convert.ToByte(g), Convert.ToByte(r), Convert.ToByte(a) };
+        //    return BitConverter.ToInt32(bytes, 0);
+        //}
+
+        public static ColorHolder ToColorFromHex(this string hexColor)
         {
             if (string.IsNullOrWhiteSpace(hexColor))
                 throw new ArgumentException("Invalid color string.", nameof(hexColor));
 
             if (!hexColor.StartsWith("#", StringComparison.Ordinal))
                 hexColor.Insert(0, "#");
-
-            Color color = Colors.Transparent;
 
             switch (hexColor.Length)
             {
@@ -43,8 +50,7 @@ namespace FFImageLoading.Extensions
                         var g = (byte)((cuint >> 8) & 0xff);
                         var b = (byte)(cuint & 0xff);
 
-                        color = Color.FromArgb(a, r, g, b);
-                        break;
+                        return new ColorHolder(a, r, g, b);
                     }
                 case 7:
                     {
@@ -53,8 +59,7 @@ namespace FFImageLoading.Extensions
                         var g = (byte)((cuint >> 8) & 0xff);
                         var b = (byte)(cuint & 0xff);
 
-                        color = Color.FromArgb(255, r, g, b);
-                        break;
+                        return new ColorHolder(255, r, g, b);
                     }
                 case 5:
                     {
@@ -68,8 +73,7 @@ namespace FFImageLoading.Extensions
                         g = (byte)(g << 4 | g);
                         b = (byte)(b << 4 | b);
 
-                        color = Color.FromArgb(a, r, g, b);
-                        break;
+                        return new ColorHolder(a, r, g, b);
                     }
                 case 4:
                     {
@@ -81,14 +85,11 @@ namespace FFImageLoading.Extensions
                         g = (byte)(g << 4 | g);
                         b = (byte)(b << 4 | b);
 
-                        color = Color.FromArgb(255, r, g, b);
-                        break;
+                        return new ColorHolder(255, r, g, b);
                     }
                 default:
                     throw new FormatException(string.Format("The {0} string is not a recognized HexColor format.", hexColor));
             }
-
-            return color;
         }
     }
 }

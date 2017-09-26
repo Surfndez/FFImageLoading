@@ -1,7 +1,6 @@
 ﻿using FFImageLoading.Extensions;
 using FFImageLoading.Work;
 using System;
-using Windows.UI;
 
 namespace FFImageLoading.Transformations
 {
@@ -85,7 +84,7 @@ namespace FFImageLoading.Transformations
             int w = (int)desiredWidth;
             int h = (int)desiredHeight;
 
-            int transparentColor = Colors.Transparent.ToInt();
+            var transparentColor = ColorExtensions.Transparent;
 
             for (int y = 0; y < h; y++)
             {
@@ -118,12 +117,10 @@ namespace FFImageLoading.Transformations
             if (borderSize > 0d)
             {
                 borderSize = (borderSize * (desiredWidth + desiredHeight) / 2d / 500d);
-                int borderColor = Colors.Transparent.ToInt();
+                var borderColor = ColorExtensions.Transparent.ToInt();
 
                 try
                 {
-                    if (!borderHexColor.StartsWith("#", StringComparison.Ordinal))
-                        borderHexColor = borderHexColor.Insert(0, "#");
                     borderColor = borderHexColor.ToColorFromHex().ToInt();
                 }
                 catch (Exception)
