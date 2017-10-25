@@ -11,18 +11,21 @@ using Windows.UI.Xaml.Media.Imaging;
 
 namespace FFImageLoading.Work
 {
-    public class PlatformImageLoaderTask<TImageView> : ImageLoaderTask<WriteableBitmap, TImageView> where TImageView : class
+    public class PlatformImageLoaderTask<TImageView> : ImageLoaderTask<BitmapSource, TImageView> where TImageView : class
     {
         static readonly SemaphoreSlim _decodingLock = new SemaphoreSlim(1, 1);
 
-        public PlatformImageLoaderTask(ITarget<WriteableBitmap, TImageView> target, TaskParameter parameters, IImageService imageService, Configuration configuration, IMainThreadDispatcher mainThreadDispatcher)
-            : base(ImageCache.Instance, configuration.DataResolverFactory ?? DataResolvers.DataResolverFactory.Instance, target, parameters, imageService, configuration, mainThreadDispatcher, false)
+        public PlatformImageLoaderTask(ITarget<BitmapSource, TImageView> target, TaskParameter parameters, IImageService imageService) : base(ImageCache.Instance, target, parameters, imageService)
         {
-
+            // do not remove! Kicks scale retrieval so it's available for all, without deadlocks due to accessing MainThread
+            ScaleHelper.Init();
         }
 
-        protected override Task SetTargetAsync(WriteableBitmap image, bool animated)
+        protected override Task SetTargetAsync(BitmapSource image, bool animated)
         {
+            if (Target == null)
+                return Task.FromResult(true);
+            
             return MainThreadDispatcher.PostAsync(() =>
             {
                 ThrowIfCancellationRequested();
@@ -30,7 +33,7 @@ namespace FFImageLoading.Work
             });
         }
 
-        protected async override Task<WriteableBitmap> GenerateImageAsync(string path, ImageSource source, Stream imageData, ImageInformation imageInformation, bool enableTransformations, bool isPlaceholder)
+        protected async override Task<BitmapSource> GenerateImageAsync(string path, ImageSource source, Stream imageData, ImageInformation imageInformation, bool enableTransformations, bool isPlaceholder)
         {
             BitmapHolder imageIn = null;
 
@@ -57,7 +60,7 @@ namespace FFImageLoading.Work
             }
             finally
             {
-                imageData?.Dispose();
+                imageData.TryDispose();
             }
 
             ThrowIfCancellationRequested();

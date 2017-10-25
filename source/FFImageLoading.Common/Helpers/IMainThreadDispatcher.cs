@@ -9,6 +9,8 @@ namespace FFImageLoading.Helpers
         // void Post(Action action);
 
         Task PostAsync(Action action);
+
+        Task PostAsync(Func<Task> action);
     }
 }
 

@@ -11,6 +11,7 @@ using FFImageLoading.Drawables;
 using FFImageLoading.Extensions;
 using FFImageLoading.Helpers;
 using FFImageLoading.Work;
+using FFImageLoading.Views;
 
 namespace FFImageLoading
 {
@@ -18,8 +19,7 @@ namespace FFImageLoading
     {
         static readonly SemaphoreSlim _decodingLock = new SemaphoreSlim(1, 1);
 
-        public PlatformImageLoaderTask(ITarget<SelfDisposingBitmapDrawable, TImageView> target, TaskParameter parameters, IImageService imageService, Configuration configuration, IMainThreadDispatcher mainThreadDispatcher)
-            : base(ImageCache.Instance, configuration.DataResolverFactory ?? DataResolvers.DataResolverFactory.Instance, target, parameters, imageService, configuration, mainThreadDispatcher, true)
+        public PlatformImageLoaderTask(ITarget<SelfDisposingBitmapDrawable, TImageView> target, TaskParameter parameters, IImageService imageService) : base(ImageCache.Instance, target, parameters, imageService)
         {
         }
 
@@ -33,6 +33,9 @@ namespace FFImageLoading
 
         protected async override Task SetTargetAsync(SelfDisposingBitmapDrawable image, bool animated)
         {
+            if (Target == null)
+                return;
+
             ThrowIfCancellationRequested();
 
             var ffDrawable = image as FFBitmapDrawable;
@@ -51,7 +54,16 @@ namespace FFImageLoading
                 if (animated)
                 {
                     SelfDisposingBitmapDrawable placeholderDrawable = null;
-                    if (PlaceholderWeakReference != null && PlaceholderWeakReference.TryGetTarget(out placeholderDrawable) && placeholderDrawable != null)
+                    PlaceholderWeakReference?.TryGetTarget(out placeholderDrawable);
+
+                    if (placeholderDrawable == null)
+                    {
+                        // Enable fade animation when no placeholder is set and the previous image is not null
+                        var imageView = PlatformTarget.Control as ImageViewAsync;
+                        placeholderDrawable = imageView?.Drawable as SelfDisposingBitmapDrawable;
+                    }
+
+                    if (placeholderDrawable.IsValidAndHasValidBitmap())
                     {
                         int fadeDuration = Parameters.FadeAnimationDuration.HasValue ?
                             Parameters.FadeAnimationDuration.Value : Configuration.FadeAnimationDuration;
@@ -129,7 +141,14 @@ namespace FFImageLoading
                 int exifRotation = 0;
                 if (source == ImageSource.Filepath)
                 {
-                    exifRotation = path.GetExifRotationDegrees();
+                    try
+                    {
+                        exifRotation = path.GetExifRotationDegrees();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error("Reading EXIF orientation failed", ex);
+                    }
                 }
 
                 ThrowIfCancellationRequested();
@@ -177,7 +196,7 @@ namespace FFImageLoading
             }
             finally
             {
-                imageData?.Dispose();
+                imageData.TryDispose();
             }
 
             ThrowIfCancellationRequested();
@@ -220,7 +239,7 @@ namespace FFImageLoading
                             if (old != null && old.Handle != IntPtr.Zero && !old.IsRecycled && old != bitmap && old.Handle != bitmap.Handle)
                             {
                                 old?.Recycle();
-                                old?.Dispose();
+                                old.TryDispose();
                             }
                         }
                     }
@@ -255,27 +274,12 @@ namespace FFImageLoading
 
             try
             {
-                int downsampleWidth = 0;
-                int downsampleHeight = 0;
+                var gifDecoder = new PlatformGifHelper();
 
-                if (Parameters.DownSampleSize != null && (Parameters.DownSampleSize.Item1 > 0 || Parameters.DownSampleSize.Item2 > 0))
-                {
-                    downsampleWidth = Parameters.DownSampleSize.Item1;
-                    downsampleHeight = Parameters.DownSampleSize.Item2;
-                }
-
-                if (Parameters.DownSampleUseDipUnits)
-                {
-                    downsampleWidth = downsampleWidth.DpToPixels();
-                    downsampleHeight = downsampleHeight.DpToPixels();
-                }
-
-                var gifDecoder = new GifDecoder(downsampleWidth, downsampleHeight, (bmp) =>
+                await gifDecoder.ReadGifAsync(imageData, Parameters, (bmp) =>
                 {
                     return PlatformTransformAsync(path, source, enableTransformations, isPlaceholder, bmp);
                 });
-
-                await gifDecoder.ReadGifAsync(imageData);
                 ThrowIfCancellationRequested();
                 var bitmap = gifDecoder.GetBitmap();
                 ThrowIfCancellationRequested();
@@ -283,7 +287,7 @@ namespace FFImageLoading
             }
             finally
             {
-                imageData?.Dispose();
+                imageData.TryDispose();
             }
         }
 
@@ -293,7 +297,7 @@ namespace FFImageLoading
             {
                 SelfDisposingBitmapDrawable image = null;
 
-                if (imageInformation.Type == ImageInformation.ImageType.GIF && Configuration.AnimateGifs && GifDecoder.CheckIfAnimated(imageData))
+                if (imageInformation.Type == ImageInformation.ImageType.GIF && Configuration.AnimateGifs && GifHelper.CheckIfAnimated(imageData))
                 {
                     image = await PlatformGenerateGifImageAsync(path, source, imageData, imageInformation, enableTransformations, isPlaceholder);
                 }

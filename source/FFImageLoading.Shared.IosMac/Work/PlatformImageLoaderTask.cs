@@ -30,8 +30,7 @@ namespace FFImageLoading.Work
         static object _webpDecoder;
 #endif
 
-        public PlatformImageLoaderTask(ITarget<PImage, TImageView> target, TaskParameter parameters, IImageService imageService, Configuration configuration, IMainThreadDispatcher mainThreadDispatcher)
-            : base(ImageCache.Instance, configuration.DataResolverFactory ?? DataResolvers.DataResolverFactory.Instance, target, parameters, imageService, configuration, mainThreadDispatcher, true)
+        public PlatformImageLoaderTask(ITarget<PImage, TImageView> target, TaskParameter parameters, IImageService imageService) : base(ImageCache.Instance, target, parameters, imageService)
         {
             // do not remove! Kicks scale retrieval so it's available for all, without deadlocks due to accessing MainThread
             ScaleHelper.Init();
@@ -39,6 +38,9 @@ namespace FFImageLoading.Work
 
         protected override Task SetTargetAsync(PImage image, bool animated)
         {
+            if (Target == null)
+                return Task.FromResult(true);
+            
             return MainThreadDispatcher.PostAsync(() =>
             {
                 ThrowIfCancellationRequested();
@@ -83,7 +85,7 @@ namespace FFImageLoading.Work
                         }
                         var decodedWebP = decoder.Decode(imageData);
                         //TODO Add WebP images downsampling!
-                        imageIn = decodedWebP;   
+                        imageIn = decodedWebP;
                     }
                     finally
                     {
@@ -93,13 +95,15 @@ namespace FFImageLoading.Work
                     throw new NotImplementedException();
 #endif
                 }
-
-                var nsdata = NSData.FromStream(imageData);
-                imageIn = nsdata.ToImage(new CoreGraphics.CGSize(downsampleWidth, downsampleHeight), ScaleHelper.Scale, Configuration, Parameters, NSDataExtensions.RCTResizeMode.ScaleAspectFill, imageInformation, allowUpscale);
+                else
+                {
+                    var nsdata = NSData.FromStream(imageData);
+                    imageIn = nsdata.ToImage(new CoreGraphics.CGSize(downsampleWidth, downsampleHeight), ScaleHelper.Scale, Configuration, Parameters, NSDataExtensions.RCTResizeMode.ScaleAspectFill, imageInformation, allowUpscale);
+                }
             }
             finally
             {
-                imageData?.Dispose();
+                imageData.TryDispose();
             }
 
             ThrowIfCancellationRequested();
@@ -138,7 +142,7 @@ namespace FFImageLoading.Work
                             finally
                             {
                                 if (old != null && old != imageIn && old.Handle != imageIn.Handle)
-                                    old.Dispose();
+                                    old.TryDispose();
                             }
                         }
                     }
@@ -174,7 +178,7 @@ namespace FFImageLoading.Work
                                 finally
                                 {
                                     if (old != null && old != tempImage && old.Handle != tempImage.Handle)
-                                        old.Dispose();
+                                    old.TryDispose();
                                 }
                             }
 
@@ -183,7 +187,7 @@ namespace FFImageLoading.Work
 
                         var oldImageIn = imageIn;
                         imageIn = PImage.CreateAnimatedImage(animatedImages.Where(v => v.CGImage != null).ToArray(), imageIn.Duration);
-                        oldImageIn?.Dispose();
+                        oldImageIn.TryDispose();
 #endif
                     }
                 }

@@ -12,6 +12,7 @@ set buildargsTests=/p:Configuration="Debug" /p:Platform="%platform%" /p:NoWarn="
 echo Restoring NuGets...
 
 nuget restore -MsbuildPath "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\MSBuild\15.0\Bin"
+dotnet restore
 
 echo Building FFImageLoading...
 
@@ -19,7 +20,7 @@ echo Building FFImageLoading...
 %msbuild% source/FFImageLoading.BaitAndSwitch/FFImageLoading.BaitAndSwitch.csproj %buildargs%
 %msbuild% source/FFImageLoading.Windows/FFImageLoading.Windows.csproj %buildargs%
 %msbuild% source/FFImageLoading.Touch/FFImageLoading.Touch.csproj %buildargs%
-%msbuild% source/FFImageLoading.MacOs/FFImageLoading.MacOs.csproj %buildargsRelease%
+%msbuild% source/FFImageLoading.Mac/FFImageLoading.Mac.csproj %buildargsRelease%
 %msbuild% source/FFImageLoading.Droid/FFImageLoading.Droid.csproj %buildargs%
 
 echo Building FFImageLoading.Transformations...
@@ -50,8 +51,9 @@ echo Building FFImageLoading.Svg...
 
 echo Unit testing...
 
-%msbuild% source/Tests/FFImageLoading.Core.Tests/FFImageLoading.Core.Tests.csproj %buildargsTests%
-xunit.console.clr4 source/Tests/FFImageLoading.Core.Tests/bin/Debug/FFImageLoading.Core.Tests.dll /appveyor
+REM %msbuild% source/Tests/FFImageLoading.Tests/FFImageLoading.Tests.csproj %buildargsTests%
+REM xunit.console.clr4 source/Tests/FFImageLoading.Tests/bin/Debug/FFImageLoading.Core.Tests.dll /appveyor
+REM dotnet test
 
 echo Packaging NuGets...
 

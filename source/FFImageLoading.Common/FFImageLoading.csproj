@@ -123,6 +123,12 @@
     <Compile Include="DataResolvers\WrappedDataResolverFactory.cs" />
     <Compile Include="DataResolvers\WrappedDataResolver.cs" />
     <Compile Include="Helpers\FileHeader.cs" />
+    <Compile Include="Extensions\ObjectExtensions.cs" />
+    <Compile Include="Helpers\EmptyPlatformPerformance.cs" />
+    <Compile Include="ImageServiceBase.cs" />
+    <Compile Include="DataResolvers\UrlDataResolver.cs" />
+    <Compile Include="DataResolvers\StreamDataResolver.cs" />
+    <Compile Include="Helpers\GifDecoderBase.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\Portable\$(TargetFrameworkVersion)\Microsoft.Portable.CSharp.targets" />
   <ProjectExtensions>

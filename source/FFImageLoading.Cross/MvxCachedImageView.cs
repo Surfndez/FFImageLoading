@@ -158,6 +158,20 @@ namespace FFImageLoading.Cross
             set { if (_fadeAnimationEnabled != value) { _fadeAnimationEnabled = value; OnPropertyChanged(nameof(FadeAnimationEnabled)); } }
         }
 
+        bool? _fadeAnimationForCachedImages;
+        public bool? FadeAnimationForCachedImages
+        {
+            get { return _fadeAnimationForCachedImages; }
+            set { if (_fadeAnimationForCachedImages != value) { _fadeAnimationForCachedImages = value; OnPropertyChanged(nameof(FadeAnimationForCachedImages)); } }
+        }
+
+        int? _fadeAnimationDuration;
+        public int? FadeAnimationDuration
+        {
+            get { return _fadeAnimationDuration; }
+            set { if (_fadeAnimationDuration != value) { _fadeAnimationDuration = value; OnPropertyChanged(nameof(FadeAnimationDuration)); } }
+        }
+
         bool? _transformPlaceholders;
         public bool? TransformPlaceholders
         {
@@ -189,14 +203,14 @@ namespace FFImageLoading.Cross
         IDataResolver _customLoadingPlaceholderDataResolver;
         public IDataResolver CustomLoadingPlaceholderDataResolver
         {
-        	get { return _customLoadingPlaceholderDataResolver; }
+            get { return _customLoadingPlaceholderDataResolver; }
             set { if (_customLoadingPlaceholderDataResolver != value) { _customLoadingPlaceholderDataResolver = value; OnPropertyChanged(nameof(CustomLoadingPlaceholderDataResolver)); } }
         }
 
         IDataResolver _customErrorPlaceholderDataResolver;
         public IDataResolver CustomErrorPlaceholderDataResolver
         {
-        	get { return _customErrorPlaceholderDataResolver; }
+            get { return _customErrorPlaceholderDataResolver; }
             set { if (_customErrorPlaceholderDataResolver != value) { _customErrorPlaceholderDataResolver = value; OnPropertyChanged(nameof(CustomErrorPlaceholderDataResolver)); } }
         }
 
@@ -233,6 +247,13 @@ namespace FFImageLoading.Cross
             set { if (_imagePath != value) { _imagePath = value; OnPropertyChanged(nameof(ImagePath)); } }
         }
 
+        string _customCacheKey;
+        public string CustomCacheKey
+        {
+            get { return _customCacheKey; }
+            set { if (_customCacheKey != value) { _customCacheKey = value; OnPropertyChanged(nameof(CustomCacheKey)); } }
+        }
+
         Func<CancellationToken, Task<Stream>> _imageStream;
         public Func<CancellationToken, Task<Stream>> ImageStream
         {
@@ -263,10 +284,7 @@ namespace FFImageLoading.Cross
             var ffSource = GetImageSourceBinding(ImagePath, ImageStream);
             var placeholderSource = GetImageSourceBinding(LoadingPlaceholderImagePath, null);
 
-            IsLoading = true;
-
             Cancel();
-
             TaskParameter imageLoader = null;
 
             if (ffSource == null)
@@ -277,8 +295,12 @@ namespace FFImageLoading.Cross
                 Image = null;
 #endif
                 IsLoading = false;
+                return;
             }
-            else if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.Url)
+
+            IsLoading = true;
+
+            if (ffSource.ImageSource == FFImageLoading.Work.ImageSource.Url)
             {
                 imageLoader = ImageService.Instance.LoadUrl(ffSource.Path, CacheDuration);
             }
@@ -305,14 +327,6 @@ namespace FFImageLoading.Cross
 
             if (imageLoader != null)
             {
-                //TODO
-                // CustomKeyFactory
-                //if (Element.CacheKeyFactory != null)
-                //{
-                //    var bindingContext = Element.BindingContext;
-                //    imageLoader.CacheKey(Element.CacheKeyFactory.GetKey(source, bindingContext));
-                //}
-
                 // LoadingPlaceholder
                 if (placeholderSource != null)
                 {
@@ -365,7 +379,11 @@ namespace FFImageLoading.Cross
 
                 // FadeAnimation
                 if (FadeAnimationEnabled.HasValue)
-                    imageLoader.FadeAnimation(FadeAnimationEnabled.Value);
+                    imageLoader.FadeAnimation(FadeAnimationEnabled.Value, duration: FadeAnimationDuration);
+
+                // FadeAnimationForCachedImages
+                if (FadeAnimationEnabled.HasValue && FadeAnimationForCachedImages.HasValue)
+                    imageLoader.FadeAnimation(FadeAnimationEnabled.Value, FadeAnimationForCachedImages.Value, FadeAnimationDuration);
 
                 // TransformPlaceholders
                 if (TransformPlaceholders.HasValue)
@@ -412,6 +430,9 @@ namespace FFImageLoading.Cross
                 if (OnFileWriteFinished != null)
                     imageLoader.FileWriteFinished((info) => OnFileWriteFinished(this, new Args.FileWriteFinishedEventArgs(info)));
 
+                if (!string.IsNullOrWhiteSpace(CustomCacheKey))
+                    imageLoader.CacheKey(CustomCacheKey);
+
                 SetupOnBeforeImageLoading(imageLoader);
 
                 _scheduledWork = imageLoader.Into(this);
@@ -424,7 +445,7 @@ namespace FFImageLoading.Cross
         /// eg. custom cache keys, svg data resolvers, etc
         /// </summary>
         /// <param name="imageLoader">Image loader.</param>
-        protected virtual void SetupOnBeforeImageLoading(Work.TaskParameter imageLoader)
+        protected virtual void SetupOnBeforeImageLoading(TaskParameter imageLoader)
         {
         }
 
@@ -433,16 +454,15 @@ namespace FFImageLoading.Cross
             if (string.IsNullOrWhiteSpace(imagePath) && imageStream == null)
                 return null;
 
+            if (imageStream != null)
+                return new ImageSourceBinding(ImageSource.Stream, "Stream");
+
             if (imagePath.StartsWith("res:", StringComparison.OrdinalIgnoreCase))
             {
                 var resourceName = imagePath.Split(new[] { "res:" }, StringSplitOptions.None)[1];
                 return new ImageSourceBinding(ImageSource.CompiledResource, resourceName);
             }
 
-            if (imagePath.StartsWith("resource://", StringComparison.OrdinalIgnoreCase))
-            {
-                return new ImageSourceBinding(ImageSource.EmbeddedResource, imagePath);
-            }
 #if __ANDROID__
             if (imagePath.StartsWith("android.resource", StringComparison.OrdinalIgnoreCase))
             {
@@ -462,6 +482,12 @@ namespace FFImageLoading.Cross
             {
                 if (uri.Scheme == "file")
                     return new ImageSourceBinding(ImageSource.Filepath, uri.LocalPath);
+
+                if (uri.Scheme == "resource")
+                    return new ImageSourceBinding(ImageSource.EmbeddedResource,imagePath);
+
+                if (uri.Scheme == "app")
+                    return new ImageSourceBinding(ImageSource.CompiledResource, uri.LocalPath);
 
                 return new ImageSourceBinding(ImageSource.Url, imagePath);
             }
@@ -487,15 +513,15 @@ namespace FFImageLoading.Cross
         {
             public ImageSourceBinding(ImageSource imageSource, string path)
             {
-            	ImageSource = imageSource;
-            	Path = path;
+                ImageSource = imageSource;
+                Path = path;
             }
 
             public ImageSourceBinding(Func<CancellationToken, Task<Stream>> stream)
             {
-            	ImageSource = ImageSource.Stream;
-            	Stream = stream;
-            	Path = "Stream";
+                ImageSource = ImageSource.Stream;
+                Stream = stream;
+                Path = "Stream";
             }
 
             public ImageSource ImageSource { get; private set; }
@@ -506,14 +532,14 @@ namespace FFImageLoading.Cross
 
             public override int GetHashCode()
             {
-            	unchecked
-            	{
-            		int hash = 17;
-            		hash = hash * 23 + this.ImageSource.GetHashCode();
-            		hash = hash * 23 + Path.GetHashCode();
-            		hash = hash * 23 + Stream.GetHashCode();
-            		return hash;
-            	}
+                unchecked
+                {
+                    int hash = 17;
+                    hash = hash * 23 + this.ImageSource.GetHashCode();
+                    hash = hash * 23 + Path.GetHashCode();
+                    hash = hash * 23 + Stream.GetHashCode();
+                    return hash;
+                }
             }
         }
     }

@@ -7,29 +7,16 @@ namespace FFImageLoading.Helpers
 {
     public class MainThreadDispatcher : IMainThreadDispatcher
     {
-		static MainThreadDispatcher instance;
-
-		public static MainThreadDispatcher Instance
-		{
-			get
-			{
-				if (instance == null)
-					instance = new MainThreadDispatcher();
-
-				return instance;
-			}
-		}
-
         public void Post(Action action)
         {
-			if (NSThread.Current.IsMainThread)
-			{
-				action?.Invoke();
-			}
-			else
-			{
+            if (NSThread.Current.IsMainThread)
+            {
+                action?.Invoke();
+            }
+            else
+            {
                 DispatchQueue.MainQueue.DispatchSync(action);
-			}
+            }
         }
 
         public Task PostAsync(Action action)
@@ -65,6 +52,41 @@ namespace FFImageLoading.Helpers
             }
 
             return tcs.Task;
+        }
+
+        public async Task PostAsync(Func<Task> action)
+        {
+            var tcs = new TaskCompletionSource<object>();
+
+            if (NSThread.Current.IsMainThread)
+            {
+                try
+                {
+                    await action?.Invoke();
+                    tcs.SetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+            }
+            else
+            {
+                DispatchQueue.MainQueue.DispatchAsync(async () =>
+                {
+                    try
+                    {
+                        await action?.Invoke();
+                        tcs.SetResult(true);
+                    }
+                    catch (Exception ex)
+                    {
+                        tcs.SetException(ex);
+                    }
+                });
+            }
+
+            await tcs.Task;
         }
     }
 }

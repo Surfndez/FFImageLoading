@@ -10,112 +10,69 @@ namespace FFImageLoading.Svg.Forms
 #elif __ANDROID__
             [Android.Runtime.Preserve(AllMembers = true)]
 #endif
+
+    /// <summary>
+    /// SvgCachedImage by Daniel Luberda
+    /// </summary>
     [Preserve(AllMembers = true)]
-	public class SvgCachedImage : CachedImage
+    public class SvgCachedImage : CachedImage
     {
-        static FFImageLoading.Forms.ImageSourceConverter _imageSourceConverter = new FFImageLoading.Forms.ImageSourceConverter();
+        public static void Init()
+        {
+        }
 
         public SvgCachedImage() : base()
         {
             ReplaceStringMap = new Dictionary<string, string>();
         }
 
-        /// <summary>
-        /// The source property.
-        /// </summary>
-        public static new readonly BindableProperty SourceProperty = BindableProperty.Create(nameof(Source), typeof(ImageSource), typeof(SvgCachedImage), default(ImageSource), BindingMode.OneWay, propertyChanging: OnSourcePropertyChanging);
-
-        static void OnSourcePropertyChanging(BindableObject bindable, object oldValue, object newValue)
+        protected override ImageSource CoerceImageSource(object newValue)
         {
-            var element = (CachedImage)bindable;
-
-            // HACK for the strange issue when TypeConverter is not respected (somehow FileImageSource is returned !?!?!?!?)
-			var fileSource = newValue as FileImageSource;
-            if (fileSource?.File != null && fileSource.File.StartsWith("<", StringComparison.OrdinalIgnoreCase))
+            var fileSource = newValue as FileImageSource;
+            if (fileSource?.File != null)
             {
-                element.Source = SvgImageSource.FromSvgString(fileSource.File, replaceStringMap: ((SvgCachedImage)element).ReplaceStringMap);
-                return;
+                if (fileSource.File.StartsWith("<", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new SvgImageSource(new DataUrlImageSource(fileSource.File), 0, 0, true, ReplaceStringMap);
+                }
+                else if (fileSource.File.IsSvgFileUrl())
+                {
+                    return new SvgImageSource(fileSource, 0, 0, true, ReplaceStringMap);
+                }
             }
 
             var uriSource = newValue as UriImageSource;
-            if (uriSource?.Uri?.OriginalString != null && uriSource.Uri.OriginalString.IsSvgDataUrl())
-			{
-				element.Source = SvgImageSource.FromSvgString(uriSource.Uri.OriginalString, replaceStringMap: ((SvgCachedImage)element).ReplaceStringMap);
-				return;
-			}
+            if (uriSource?.Uri?.OriginalString != null)
+            {
+                if (uriSource.Uri.OriginalString.IsSvgDataUrl())
+                {
+                    return new SvgImageSource(uriSource, 0, 0, true, ReplaceStringMap);
+                }
+                else if (uriSource.Uri.OriginalString.IsSvgFileUrl())
+                {
+                    return new SvgImageSource(uriSource, 0, 0, true, ReplaceStringMap);
+                }
+            }
 
-            element.Source = newValue as ImageSource;
-        }
+            var dataUrlSource = newValue as DataUrlImageSource;
+            if (dataUrlSource?.DataUrl != null)
+            {
+                if (dataUrlSource.DataUrl.IsSvgDataUrl())
+                {
+                    return new SvgImageSource(dataUrlSource, 0, 0, true, ReplaceStringMap);
+                }
+            }
 
-        /// <summary>
-        /// Gets or sets the source.
-        /// </summary>
-        /// <value>The source.</value>
-        [TypeConverter(typeof(SvgImageSourceConverter))]
-        public new ImageSource Source
-        {
-        	get
-        	{
-        		return (ImageSource)GetValue(SourceProperty);
-        	}
-        	set
-        	{
-        		SetValue(SourceProperty, value);
-        	}
-        }
+            var embeddedSource = newValue as EmbeddedResourceImageSource;
+            if (embeddedSource?.Uri?.OriginalString != null)
+            {
+                if (embeddedSource.Uri.OriginalString.IsSvgFileUrl())
+                {
+                    return new SvgImageSource(embeddedSource, 0, 0, true, ReplaceStringMap);
+                }
+            }
 
-        /// <summary>
-        /// The loading placeholder property.
-        /// </summary>
-        public static new readonly BindableProperty LoadingPlaceholderProperty = BindableProperty.Create(nameof(LoadingPlaceholder), typeof(ImageSource), typeof(SvgCachedImage), default(ImageSource), propertyChanging: OnLoadingPlaceholderPropertyChanging);
-
-        static void OnLoadingPlaceholderPropertyChanging(BindableObject bindable, object oldValue, object newValue)
-        {
-        	var element = (CachedImage)bindable;
-            element.LoadingPlaceholder = newValue as ImageSource;
-        }
-
-        /// <summary>
-        /// Gets or sets the loading placeholder image.
-        /// </summary>
-        [TypeConverter(typeof(SvgImageSourceConverter))]
-        public new ImageSource LoadingPlaceholder
-        {
-        	get
-        	{
-        		return (ImageSource)GetValue(LoadingPlaceholderProperty);
-        	}
-        	set
-        	{
-        		SetValue(LoadingPlaceholderProperty, value);
-        	}
-        }
-
-        /// <summary>
-        /// The error placeholder property.
-        /// </summary>
-        public static new readonly BindableProperty ErrorPlaceholderProperty = BindableProperty.Create(nameof(ErrorPlaceholder), typeof(ImageSource), typeof(SvgCachedImage), default(ImageSource), propertyChanging: OnErrorPlaceholderPropertyChanging);
-
-        static void OnErrorPlaceholderPropertyChanging(BindableObject bindable, object oldValue, object newValue)
-        {
-        	var element = (CachedImage)bindable;
-        	element.ErrorPlaceholder = newValue as ImageSource;
-        }
-
-        /// <summary>
-        /// Gets or sets the error placeholder image.
-        /// </summary>
-        [TypeConverter(typeof(SvgImageSourceConverter))]
-        public new ImageSource ErrorPlaceholder
-        {
-        	get
-        	{
-        		return (ImageSource)GetValue(ErrorPlaceholderProperty);
-        	}
-        	set
-        	{
-        		SetValue(ErrorPlaceholderProperty, value);
-        	}
+            return base.CoerceImageSource(newValue);
         }
 
         /// <summary>
