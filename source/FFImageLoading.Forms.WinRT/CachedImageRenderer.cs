@@ -196,7 +196,8 @@ namespace FFImageLoading.Forms.WinRT
                     _lastImageSource = ffSource;
                 });
 
-                _currentTask = imageLoader.Into(imageView);
+                if (!_isDisposed)
+                    _currentTask = imageLoader.Into(imageView);
             }
         }
 
@@ -226,14 +227,13 @@ namespace FFImageLoading.Forms.WinRT
             {
                 if (element != null && !_isDisposed)
                 {
+                    element.SetIsLoading(false);
                     var elCtrl = element as IVisualElementController;
 
                     if (elCtrl != null)
                     {
                         ((IVisualElementController)Element)?.InvalidateMeasure(Xamarin.Forms.Internals.InvalidationTrigger.RendererReady);
                     }
-
-                    element.SetIsLoading(false);
                 }
             });
         }
@@ -252,6 +252,8 @@ namespace FFImageLoading.Forms.WinRT
                 {
                     taskToCancel.Cancel();
                 }
+
+                _currentTask = null;
             }
             catch (Exception) { }
         }

@@ -27,7 +27,10 @@ namespace FFImageLoading.Forms.Droid
     [Preserve(AllMembers = true)]
     public class CachedImageFastRenderer : CachedImageView, IVisualElementRenderer
     {
-        static Type _elementRendererType = typeof(ImageRenderer).Assembly.GetType("Xamarin.Forms.Platform.Android.FastRenderers.VisualElementRenderer");
+        internal static Type ElementRendererType = typeof(ImageRenderer).Assembly.GetType("Xamarin.Forms.Platform.Android.FastRenderers.VisualElementRenderer");
+        static MethodInfo _viewExtensionsMethod = typeof(ImageRenderer).Assembly.GetType("Xamarin.Forms.Platform.Android.ViewExtensions")?.GetRuntimeMethod("EnsureId", new[] { typeof(Android.Views.View) });
+        static MethodInfo _ElementRendererTypeOnTouchEvent = ElementRendererType?.GetRuntimeMethod("OnTouchEvent", new[] { typeof(MotionEvent) });
+
         bool _isDisposed;
         CachedImage _element;
         int? _defaultLabelFor;
@@ -36,6 +39,7 @@ namespace FFImageLoading.Forms.Droid
         IScheduledWork _currentTask;
         ImageSourceBinding _lastImageSource;
         readonly CachedImageRenderer.MotionEventHelper _motionEventHelper = new CachedImageRenderer.MotionEventHelper();
+        readonly object _updateBitmapLock = new object();
 
         public CachedImageFastRenderer(Context context) : base(context)
         {
@@ -88,7 +92,8 @@ namespace FFImageLoading.Forms.Droid
 
         void OnElementChanged(ElementChangedEventArgs<CachedImage> e)
         {
-            this.EnsureId();
+            //this.EnsureId();
+            _viewExtensionsMethod.Invoke(null, new[] { this });
 
             // TODO Xamarin-Internal class - Is it necessary? 
             // ElevationHelper.SetElevation(this, e.NewElement);
@@ -117,8 +122,10 @@ namespace FFImageLoading.Forms.Droid
 
         public override bool OnTouchEvent(MotionEvent e)
         {
-            if (base.OnTouchEvent(e))
+            if ((bool)_ElementRendererTypeOnTouchEvent.Invoke(_visualElementRenderer, new[] { e }) || base.OnTouchEvent(e))
+            {
                 return true;
+            }
 
             return CachedImage.FixedAndroidMotionEventHandler ? _motionEventHelper.HandleMotionEvent(Parent, e) : false;
         }
@@ -161,7 +168,7 @@ namespace FFImageLoading.Forms.Droid
 
             if (_visualElementRenderer == null)
             {
-                _visualElementRenderer = (IDisposable)Activator.CreateInstance(_elementRendererType, this);
+                _visualElementRenderer = (IDisposable)Activator.CreateInstance(ElementRendererType, this);
             }
 
             _motionEventHelper.UpdateElement(element);
@@ -227,68 +234,72 @@ namespace FFImageLoading.Forms.Droid
 
         void UpdateBitmap(CachedImageView imageView, CachedImage image, CachedImage previousImage)
         {
-            CancelIfNeeded();
-
-            if (image == null || imageView == null || imageView.Handle == IntPtr.Zero || _isDisposed)
-                return;
-
-            var ffSource = ImageSourceBinding.GetImageSourceBinding(image.Source, image);
-            if (ffSource == null)
+            lock (_updateBitmapLock)
             {
-                if (_lastImageSource == null)
+                CancelIfNeeded();
+
+                if (image == null || imageView == null || imageView.Handle == IntPtr.Zero || _isDisposed)
                     return;
 
-                _lastImageSource = null;
-                imageView.SetImageResource(global::Android.Resource.Color.Transparent);
-                return;
-            }
-
-            if (previousImage != null && !ffSource.Equals(_lastImageSource))
-            {
-                _lastImageSource = null;
-                imageView.SkipInvalidate();
-                Control.SetImageResource(global::Android.Resource.Color.Transparent);
-            }
-
-            image.SetIsLoading(true);
-
-            var placeholderSource = ImageSourceBinding.GetImageSourceBinding(image.LoadingPlaceholder, image);
-            var errorPlaceholderSource = ImageSourceBinding.GetImageSourceBinding(image.ErrorPlaceholder, image);
-            TaskParameter imageLoader;
-            image.SetupOnBeforeImageLoading(out imageLoader, ffSource, placeholderSource, errorPlaceholderSource);
-
-            if (imageLoader != null)
-            {
-                //var finishAction = imageLoader.OnFinish;
-                var sucessAction = imageLoader.OnSuccess;
-
-                //imageLoader.Finish((work) =>
-                //{
-                //    finishAction?.Invoke(work);
-                //    // ImageLoadingFinished(image);
-                //});
-
-                imageLoader.Success((imageInformation, loadingResult) =>
+                var ffSource = ImageSourceBinding.GetImageSourceBinding(image.Source, image);
+                if (ffSource == null)
                 {
-                    sucessAction?.Invoke(imageInformation, loadingResult);
-                    _lastImageSource = ffSource;
-                });
+                    if (_lastImageSource == null)
+                        return;
 
-                _currentTask = imageLoader.Into(imageView);
+                    _lastImageSource = null;
+                    imageView.SetImageResource(global::Android.Resource.Color.Transparent);
+                    return;
+                }
+
+                if (previousImage != null && !ffSource.Equals(_lastImageSource))
+                {
+                    _lastImageSource = null;
+                    imageView.SkipInvalidate();
+                    Control.SetImageResource(global::Android.Resource.Color.Transparent);
+                }
+
+                image.SetIsLoading(true);
+
+                var placeholderSource = ImageSourceBinding.GetImageSourceBinding(image.LoadingPlaceholder, image);
+                var errorPlaceholderSource = ImageSourceBinding.GetImageSourceBinding(image.ErrorPlaceholder, image);
+                TaskParameter imageLoader;
+                image.SetupOnBeforeImageLoading(out imageLoader, ffSource, placeholderSource, errorPlaceholderSource);
+
+                if (imageLoader != null)
+                {
+                    var finishAction = imageLoader.OnFinish;
+                    var sucessAction = imageLoader.OnSuccess;
+
+                    imageLoader.Finish((work) =>
+                    {
+                        finishAction?.Invoke(work);
+                        ImageLoadingFinished(image);
+                    });
+
+                    imageLoader.Success((imageInformation, loadingResult) =>
+                    {
+                        sucessAction?.Invoke(imageInformation, loadingResult);
+                        _lastImageSource = ffSource;
+                    });
+
+                    if (!_isDisposed)
+                        _currentTask = imageLoader.Into(imageView);
+                }
             }
         }
 
-        //async void ImageLoadingFinished(CachedImage element)
-        //{
-        //    await ImageService.Instance.Config.MainThreadDispatcher.PostAsync(() =>
-        //    {
-        //        if (element != null && !_isDisposed)
-        //        {
-        //            ((IVisualElementController)element).NativeSizeChanged();
-        //            element.SetIsLoading(false);
-        //        }
-        //    });
-        //}
+        async void ImageLoadingFinished(CachedImage element)
+        {
+            await ImageService.Instance.Config.MainThreadDispatcher.PostAsync(() =>
+            {
+                if (element != null && !_isDisposed)
+                {
+                    ((IVisualElementController)element).NativeSizeChanged();
+                    element.SetIsLoading(false);
+                }
+            });
+        }
 
         void ReloadImage()
         {
@@ -304,6 +315,8 @@ namespace FFImageLoading.Forms.Droid
                 {
                     taskToCancel.Cancel();
                 }
+
+                _currentTask = null;
             }
             catch (Exception) { }
         }

@@ -18,6 +18,7 @@ using Android.Views;
 using System.Reflection;
 
 //[assembly: ExportRenderer(typeof(CachedImage), typeof(CachedImageRenderer))]
+using System.Linq;
 namespace FFImageLoading.Forms.Droid
 {
     /// <summary>
@@ -29,14 +30,26 @@ namespace FFImageLoading.Forms.Droid
         /// <summary>
         ///   Used for registration with dependency service
         /// </summary>
-        public static void Init(bool enableFastRenderer)
+        public static void Init(bool? enableFastRenderer = default(bool?))
         {
 #pragma warning disable 0219
             var ignore1 = typeof(CachedImageRenderer);
-            var ignore2 = typeof(CachedImage);
+            var ignore2 = typeof(CachedImageFastRenderer);
+            var ignore3 = typeof(CachedImage);
 #pragma warning restore 0219
 
-            RegisterRenderer(typeof(CachedImage), enableFastRenderer ? typeof(CachedImageFastRenderer) : typeof(CachedImageRenderer));
+            var enabled = false;
+
+            if (enableFastRenderer.HasValue)
+            {
+                enabled = enableFastRenderer.Value;
+            }
+            else
+            {
+                enabled = CachedImageFastRenderer.ElementRendererType != null;
+            }
+
+            RegisterRenderer(typeof(CachedImage), enabled ? typeof(CachedImageFastRenderer) : typeof(CachedImageRenderer));
         }
 
         static void RegisterRenderer(Type type, Type renderer)
@@ -54,6 +67,9 @@ namespace FFImageLoading.Forms.Droid
         IScheduledWork _currentTask;
         ImageSourceBinding _lastImageSource;
         readonly MotionEventHelper _motionEventHelper = CachedImage.FixedAndroidMotionEventHandler ? new MotionEventHelper() : null;
+        readonly static Type _platformDefaultRendererType = typeof(ImageRenderer).Assembly.GetType("Xamarin.Forms.Platform.Android.Platform+DefaultRenderer");
+        readonly static MethodInfo _platformDefaultRendererTypeNotifyFakeHandling = _platformDefaultRendererType?.GetMethod("NotifyFakeHandling", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        readonly object _updateBitmapLock = new object();
 
         public CachedImageRenderer()
         {
@@ -151,54 +167,58 @@ namespace FFImageLoading.Forms.Droid
 
         void UpdateBitmap(CachedImageView imageView, CachedImage image, CachedImage previousImage)
         {
-            CancelIfNeeded();
-
-            if (image == null || imageView == null || imageView.Handle == IntPtr.Zero || _isDisposed)
-                return;
-
-            var ffSource = ImageSourceBinding.GetImageSourceBinding(image.Source, image);
-            if (ffSource == null)
+            lock (_updateBitmapLock)
             {
-                if (_lastImageSource == null)
+                CancelIfNeeded();
+
+                if (image == null || imageView == null || imageView.Handle == IntPtr.Zero || _isDisposed)
                     return;
 
-                _lastImageSource = null;
-                imageView.SetImageResource(global::Android.Resource.Color.Transparent);
-                return;
-            }
-
-            if (previousImage != null && !ffSource.Equals(_lastImageSource))
-            {
-                _lastImageSource = null;
-                imageView.SkipInvalidate();
-                Control.SetImageResource(global::Android.Resource.Color.Transparent);
-            }
-
-            image.SetIsLoading(true);
-
-            var placeholderSource = ImageSourceBinding.GetImageSourceBinding(image.LoadingPlaceholder, image);
-            var errorPlaceholderSource = ImageSourceBinding.GetImageSourceBinding(image.ErrorPlaceholder, image);
-            TaskParameter imageLoader;
-            image.SetupOnBeforeImageLoading(out imageLoader, ffSource, placeholderSource, errorPlaceholderSource);
-
-            if (imageLoader != null)
-            {
-                var finishAction = imageLoader.OnFinish;
-                var sucessAction = imageLoader.OnSuccess;
-
-                imageLoader.Finish((work) =>
+                var ffSource = ImageSourceBinding.GetImageSourceBinding(image.Source, image);
+                if (ffSource == null)
                 {
-                    finishAction?.Invoke(work);
-                    ImageLoadingFinished(image);
-                });
+                    if (_lastImageSource == null)
+                        return;
 
-                imageLoader.Success((imageInformation, loadingResult) =>
+                    _lastImageSource = null;
+                    imageView.SetImageResource(global::Android.Resource.Color.Transparent);
+                    return;
+                }
+
+                if (previousImage != null && !ffSource.Equals(_lastImageSource))
                 {
-                    sucessAction?.Invoke(imageInformation, loadingResult);
-                    _lastImageSource = ffSource;
-                });
+                    _lastImageSource = null;
+                    imageView.SkipInvalidate();
+                    Control.SetImageResource(global::Android.Resource.Color.Transparent);
+                }
 
-                _currentTask = imageLoader.Into(imageView);
+                image.SetIsLoading(true);
+
+                var placeholderSource = ImageSourceBinding.GetImageSourceBinding(image.LoadingPlaceholder, image);
+                var errorPlaceholderSource = ImageSourceBinding.GetImageSourceBinding(image.ErrorPlaceholder, image);
+                TaskParameter imageLoader;
+                image.SetupOnBeforeImageLoading(out imageLoader, ffSource, placeholderSource, errorPlaceholderSource);
+
+                if (imageLoader != null)
+                {
+                    var finishAction = imageLoader.OnFinish;
+                    var sucessAction = imageLoader.OnSuccess;
+
+                    imageLoader.Finish((work) =>
+                    {
+                        finishAction?.Invoke(work);
+                        ImageLoadingFinished(image);
+                    });
+
+                    imageLoader.Success((imageInformation, loadingResult) =>
+                    {
+                        sucessAction?.Invoke(imageInformation, loadingResult);
+                        _lastImageSource = ffSource;
+                    });
+
+                    if (!_isDisposed)
+                        _currentTask = imageLoader.Into(imageView);
+                }
             }
         }
 
@@ -208,8 +228,8 @@ namespace FFImageLoading.Forms.Droid
             {
                 if (element != null && !_isDisposed)
                 {
-                    ((IVisualElementController)element).NativeSizeChanged();
                     element.SetIsLoading(false);
+                    ((IVisualElementController)element).NativeSizeChanged();
                 }
             });
         }
@@ -228,6 +248,8 @@ namespace FFImageLoading.Forms.Droid
                 {
                     taskToCancel.Cancel();
                 }
+
+                _currentTask = null;
             }
             catch (Exception) { }
         }
@@ -300,29 +322,24 @@ namespace FFImageLoading.Forms.Droid
                     return false;
                 }
 
-                var renderer = parent as VisualElementRenderer<Xamarin.Forms.View>;
-                if (renderer == null)
+                var rendererType = parent.GetType();
+                if (!_platformDefaultRendererType.IsAssignableFrom(rendererType))
                 {
                     return false;
                 }
 
-                var type = parent.GetType();
-                if (type.Name.Contains("DefaultRenderer"))
+                try
                 {
-                    try
+                    // Let the container know that we're "fake" handling this event
+                    if (_platformDefaultRendererTypeNotifyFakeHandling != null)
                     {
-                        // Let the container know that we're "fake" handling this event
-                        var method = type.GetTypeInfo().GetDeclaredMethod("NotifyFakeHandling");
-                        if (method != null)
-                        {
-                            method.Invoke(parent, null);
-                            return true;
-                        }
+                        _platformDefaultRendererTypeNotifyFakeHandling.Invoke(parent, null);
+                        return true;
                     }
-                    catch (Exception) { }
                 }
+                catch (Exception) { }
 
-                return true;
+                return false;
             }
 
             public void UpdateElement(VisualElement element)
