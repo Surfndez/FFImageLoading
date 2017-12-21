@@ -27,9 +27,9 @@ namespace FFImageLoading.Forms.Droid
     [Preserve(AllMembers = true)]
     public class CachedImageFastRenderer : CachedImageView, IVisualElementRenderer
     {
-        internal static Type ElementRendererType = typeof(ImageRenderer).Assembly.GetType("Xamarin.Forms.Platform.Android.FastRenderers.VisualElementRenderer");
-        static MethodInfo _viewExtensionsMethod = typeof(ImageRenderer).Assembly.GetType("Xamarin.Forms.Platform.Android.ViewExtensions")?.GetRuntimeMethod("EnsureId", new[] { typeof(Android.Views.View) });
-        static MethodInfo _ElementRendererTypeOnTouchEvent = ElementRendererType?.GetRuntimeMethod("OnTouchEvent", new[] { typeof(MotionEvent) });
+        internal static readonly Type ElementRendererType = typeof(ImageRenderer).Assembly.GetType("Xamarin.Forms.Platform.Android.FastRenderers.VisualElementRenderer");
+        static readonly MethodInfo _viewExtensionsMethod = typeof(ImageRenderer).Assembly.GetType("Xamarin.Forms.Platform.Android.ViewExtensions")?.GetRuntimeMethod("EnsureId", new[] { typeof(Android.Views.View) });
+        static readonly MethodInfo _ElementRendererTypeOnTouchEvent = ElementRendererType?.GetRuntimeMethod("OnTouchEvent", new[] { typeof(MotionEvent) });
 
         bool _isDisposed;
         CachedImage _element;
@@ -41,16 +41,20 @@ namespace FFImageLoading.Forms.Droid
         readonly CachedImageRenderer.MotionEventHelper _motionEventHelper = new CachedImageRenderer.MotionEventHelper();
         readonly object _updateBitmapLock = new object();
 
-        public CachedImageFastRenderer(Context context) : base(context)
-        {
-        }
-
         [Obsolete("This constructor is obsolete as of version 3.0. Please use ImageRenderer(Context) instead.")]
         public CachedImageFastRenderer() : base(Xamarin.Forms.Forms.Context)
         {
         }
 
-        public CachedImageFastRenderer(IntPtr javaReference, JniHandleOwnership transfer) : base(Xamarin.Forms.Forms.Context)
+        public CachedImageFastRenderer(IntPtr javaReference, JniHandleOwnership transfer) : base(javaReference, transfer)
+        {
+        }
+
+        public CachedImageFastRenderer(Context context) : base(context)
+        {
+        }
+
+        public CachedImageFastRenderer(Context context, Android.Util.IAttributeSet attrs): base(context, attrs)
         {
         }
 
@@ -65,13 +69,13 @@ namespace FFImageLoading.Forms.Droid
                 {
                     if (_visualElementTracker != null)
                     {
-                        _visualElementTracker.Dispose();
+                        _visualElementTracker.TryDispose();
                         _visualElementTracker = null;
                     }
 
                     if (_visualElementRenderer != null)
                     {
-                        _visualElementRenderer.Dispose();
+                        _visualElementRenderer.TryDispose();
                         _visualElementRenderer = null;
                     }
 
@@ -92,11 +96,9 @@ namespace FFImageLoading.Forms.Droid
 
         void OnElementChanged(ElementChangedEventArgs<CachedImage> e)
         {
-            //this.EnsureId();
             _viewExtensionsMethod.Invoke(null, new[] { this });
 
-            // TODO Xamarin-Internal class - Is it necessary? 
-            // ElevationHelper.SetElevation(this, e.NewElement);
+            ElevationHelper.SetElevation(this, e.NewElement);
             ElementChanged?.Invoke(this, new VisualElementChangedEventArgs(e.OldElement, e.NewElement));
 
             if (e.OldElement != null)
@@ -122,7 +124,11 @@ namespace FFImageLoading.Forms.Droid
 
         public override bool OnTouchEvent(MotionEvent e)
         {
-            if ((bool)_ElementRendererTypeOnTouchEvent.Invoke(_visualElementRenderer, new[] { e }) || base.OnTouchEvent(e))
+            if (_ElementRendererTypeOnTouchEvent != null && (bool)_ElementRendererTypeOnTouchEvent.Invoke(_visualElementRenderer, new[] { e }))
+            {
+                return true;
+            }
+            else if (base.OnTouchEvent(e))
             {
                 return true;
             }
@@ -374,6 +380,35 @@ namespace FFImageLoading.Forms.Droid
                 }
 
                 return compressed;
+            }
+        }
+
+        static bool? s_isLollipopOrNewer;
+        internal static bool IsLollipopOrNewer
+        {
+            get
+            {
+                if (!s_isLollipopOrNewer.HasValue)
+                    s_isLollipopOrNewer = (int)Android.OS.Build.VERSION.SdkInt >= 21;
+                return s_isLollipopOrNewer.Value;
+            }
+        }
+
+        internal static class ElevationHelper
+        {
+            static readonly MethodInfo _getEleveationMethod = typeof(Image).Assembly.GetType("Xamarin.Forms.PlatformConfiguration.AndroidSpecific.Elevation")?.GetRuntimeMethod("GetElevation", new Type[] { typeof(VisualElement) });
+
+            internal static void SetElevation(global::Android.Views.View view, VisualElement element)
+            {
+                if (_getEleveationMethod == null || view == null || element == null || !IsLollipopOrNewer)
+                {
+                    return;
+                }
+
+                var elevation = (float?)_getEleveationMethod.Invoke(null, new[] { element });
+
+                if (elevation.HasValue)
+                    view.Elevation = elevation.Value;
             }
         }
     }

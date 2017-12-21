@@ -30,7 +30,7 @@ namespace FFImageLoading.Forms.Droid
         /// <summary>
         ///   Used for registration with dependency service
         /// </summary>
-        public static void Init(bool? enableFastRenderer = default(bool?))
+        public static void Init(bool? enableFastRenderer)
         {
 #pragma warning disable 0219
             var ignore1 = typeof(CachedImageRenderer);
@@ -243,13 +243,7 @@ namespace FFImageLoading.Forms.Droid
         {
             try
             {
-                var taskToCancel = _currentTask;
-                if (taskToCancel != null && !taskToCancel.IsCancelled)
-                {
-                    taskToCancel.Cancel();
-                }
-
-                _currentTask = null;
+                _currentTask?.Cancel();
             }
             catch (Exception) { }
         }

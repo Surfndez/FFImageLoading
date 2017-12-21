@@ -10,6 +10,7 @@ using FFImageLoading.Extensions;
 using System.Collections.Generic;
 using System.Text;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 #if __IOS__
 using Foundation;
@@ -43,6 +44,7 @@ namespace FFImageLoading.Svg.Platform
         /// <param name="vectorWidth">Vector width.</param>
         /// <param name="vectorHeight">Vector height.</param>
         /// <param name="useDipUnits">If set to <c>true</c> use dip units.</param>
+        /// <param name="replaceStringMap">Replace string map.</param>
         public SvgDataResolver(int vectorWidth = 0, int vectorHeight = 0, bool useDipUnits = true, Dictionary<string, string> replaceStringMap = null)
         {
             VectorWidth = vectorWidth;
@@ -95,8 +97,18 @@ namespace FFImageLoading.Svg.Platform
                 using (var svgStream = resolvedData.Item1)
                 using (var reader = new StreamReader(svgStream))
                 {
-                    var builder = new StringBuilder(await reader.ReadToEndAsync());
-                    foreach (var map in ReplaceStringMap)
+                    var inputString = await reader.ReadToEndAsync();
+
+                    foreach (var map in ReplaceStringMap
+                             .Where(v => v.Key.StartsWith("regex:")))
+                    {
+                        inputString = Regex.Replace(inputString, map.Key.Substring(0, 6), map.Value);
+                    }
+
+                    var builder = new StringBuilder(inputString);
+
+                    foreach (var map in ReplaceStringMap
+                             .Where(v => !v.Key.StartsWith("regex:", StringComparison.OrdinalIgnoreCase)))
                     {
                         builder.Replace(map.Key, map.Value);
                     }
@@ -141,13 +153,8 @@ namespace FFImageLoading.Svg.Platform
 
             if (UseDipUnits)
             {
-#if __ANDROID__
                 sizeX = sizeX.DpToPixels();
                 sizeY = sizeY.DpToPixels();
-#else
-                sizeX = sizeX.PointsToPixels();
-                sizeY = sizeY.PointsToPixels();
-#endif
             }
 
             lock (_encodingLock)

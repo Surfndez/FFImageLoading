@@ -29,6 +29,7 @@ namespace FFImageLoading
         /// </summary>
         /// <returns>The JPG Stream async.</returns>
         /// <param name="parameters">Parameters.</param>
+        /// <param name="quality">Quality.</param>
         public static async Task<Stream> AsJPGStreamAsync(this TaskParameter parameters, int quality = 80)
         {
             var result = await AsNSImageAsync(parameters);
@@ -42,7 +43,7 @@ namespace FFImageLoading
         /// <param name="imageView">Image view that should receive the image.</param>
         public static IScheduledWork Into(this TaskParameter parameters, NSImageView imageView)
         {
-            var target = new PImageViewTarget(imageView);
+            var target = new NSImageViewTarget(imageView);
             return parameters.Into(target);
         }
 
@@ -72,7 +73,7 @@ namespace FFImageLoading
         /// <param name="parameters">Parameters.</param>
         public static Task<NSImage> AsNSImageAsync(this TaskParameter parameters)
         {
-            var target = new PImageTarget();
+            var target = new NSImageTarget();
             var userErrorCallback = parameters.OnError;
             var finishCallback = parameters.OnFinish;
             var tcs = new TaskCompletionSource<NSImage>();

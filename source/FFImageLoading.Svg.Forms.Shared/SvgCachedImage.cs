@@ -11,16 +11,19 @@ namespace FFImageLoading.Svg.Forms
             [Android.Runtime.Preserve(AllMembers = true)]
 #endif
 
+    [Preserve(AllMembers = true)]
     /// <summary>
     /// SvgCachedImage by Daniel Luberda
     /// </summary>
-    [Preserve(AllMembers = true)]
     public class SvgCachedImage : CachedImage
     {
         public static void Init()
         {
         }
 
+        /// <summary>
+        /// SvgCachedImage by Daniel Luberda
+        /// </summary>
         public SvgCachedImage() : base()
         {
             ReplaceStringMap = new Dictionary<string, string>();
@@ -80,7 +83,7 @@ namespace FFImageLoading.Svg.Forms
         /// <summary>
         /// The error placeholder property.
         /// </summary>
-        public static readonly BindableProperty ReplaceStringMapProperty = BindableProperty.Create(nameof(ReplaceStringMap), typeof(Dictionary<string, string>), typeof(SvgCachedImage), default(Dictionary<string, string>), propertyChanged: new BindableProperty.BindingPropertyChangedDelegate(HandleReplaceStringMapPropertyChangedDelegate));
+        public static readonly BindableProperty ReplaceStringMapProperty = BindableProperty.Create(nameof(ReplaceStringMap), typeof(Dictionary<string, string>), typeof(SvgCachedImage), default(Dictionary<string, string>), propertyChanged: HandleReplaceStringMapPropertyChangedDelegate);
 
         /// <summary>
         /// Used to define replacement map which will be used to
@@ -102,13 +105,10 @@ namespace FFImageLoading.Svg.Forms
 
         static void HandleReplaceStringMapPropertyChangedDelegate(BindableObject bindable, object oldValue, object newValue)
         {
-            if (oldValue != newValue)
+            var cachedImage = bindable as SvgCachedImage;
+            if (cachedImage?.Source != null)
             {
-                var cachedImage = bindable as SvgCachedImage;
-                if (cachedImage != null && cachedImage.Source != null)
-                {
-                    cachedImage.ReloadImage();
-                }
+                cachedImage.ReloadImage();
             }
         }
 

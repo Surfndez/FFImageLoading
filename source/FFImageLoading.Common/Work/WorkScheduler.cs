@@ -14,10 +14,10 @@ namespace FFImageLoading.Work
     {
         readonly object _lock = new object();
 
-        int _statsTotalPending;
-        int _statsTotalRunning;
-        int _statsTotalMemoryCacheHits;
-        int _statsTotalWaiting;
+        long _statsTotalPending;
+        long _statsTotalRunning;
+        long _statsTotalMemoryCacheHits;
+        long _statsTotalWaiting;
         long _loadCount;
 
         public WorkScheduler(Configuration configuration, IPlatformPerformance performance)
@@ -118,7 +118,7 @@ namespace FFImageLoading.Work
             {
                 lock (_lock)
                 {
-                    PendingTasks.Remove(task);
+                    PendingTasks.TryRemove(task);
                     SimilarTasks.Remove(task);
                 }
             }
@@ -186,10 +186,6 @@ namespace FFImageLoading.Work
             }
 
             IImageLoaderTask similarRunningTask = null;
-            if (!task.Parameters.Preload)
-            {
-                PendingTasks.CancelWhenUsesSameNativeControl(task);
-            }
 
             similarRunningTask = PendingTasks.FirstOrDefaultByRawKey(task.KeyRaw);
             if (similarRunningTask == null)
@@ -203,7 +199,7 @@ namespace FFImageLoading.Work
                     || task.Parameters.Priority.Value > similarRunningTask.Parameters.Priority.Value))
                 {
                     similarRunningTask.Parameters.WithPriority(task.Parameters.Priority.Value);
-                    PendingTasks.UpdatePriority(similarRunningTask, task.Parameters.Priority.Value);
+                    PendingTasks.TryUpdatePriority(similarRunningTask, task.Parameters.Priority.Value);
                 }
 
                 if (task.Parameters.OnDownloadProgress != null)

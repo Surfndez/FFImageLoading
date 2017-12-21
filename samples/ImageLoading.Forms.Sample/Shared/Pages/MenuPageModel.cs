@@ -68,6 +68,15 @@ namespace FFImageLoading.Forms.Sample
                 },
 
                 new MenuItem() {
+                    Section = "Lists",
+                    Title = "ByteArray / custom cache key example",
+                    Command = new BaseCommand(async (param) =>
+                    {
+                        await this.PushPageFromCacheAsync<ByteArrayListPageModel>(pm => pm.Reload());
+                    })
+                },
+
+                new MenuItem() {
                     Section = "Advanced",
                     Title = "Custom CacheKey example",
                     Command = new BaseCommand(async (param) =>

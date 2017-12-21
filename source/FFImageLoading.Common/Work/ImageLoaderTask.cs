@@ -7,10 +7,12 @@ using FFImageLoading.Helpers;
 using FFImageLoading.Config;
 using System.Linq;
 using FFImageLoading.DataResolvers;
+using System.Collections.Generic;
+using FFImageLoading.Decoders;
 
 namespace FFImageLoading.Work
 {
-    public abstract class ImageLoaderTask<TImageContainer, TImageView> : IImageLoaderTask where TImageContainer : class where TImageView : class
+    public abstract class ImageLoaderTask<TDecoderContainer, TImageContainer, TImageView> : IImageLoaderTask where TDecoderContainer : class where TImageContainer : class where TImageView : class
     {
         bool _isLoadingPlaceholderLoaded;
         static readonly SemaphoreSlim _placeholdersResolveLock = new SemaphoreSlim(1, 1);
@@ -27,7 +29,6 @@ namespace FFImageLoading.Work
             ImageInformation = new ImageInformation();
             CanUseMemoryCache = true;
             SetKeys();
-            Target?.SetImageLoadingTask(this);
         }
 
         public async Task Init()
@@ -36,9 +37,9 @@ namespace FFImageLoading.Work
             {
                 try
                 {
-                    Parameters.StreamRead = await(Parameters.Stream?.Invoke(CancellationTokenSource.Token)).ConfigureAwait(false);
+                    Parameters.StreamRead = await (Parameters.Stream?.Invoke(CancellationTokenSource.Token)).ConfigureAwait(false);
                 }
-                catch(TaskCanceledException ex)
+                catch (TaskCanceledException ex)
                 {
                     Parameters.StreamRead = null;
                     Logger.Error(ex.Message, ex);
@@ -181,6 +182,10 @@ namespace FFImageLoading.Work
 
         protected abstract int DpiToPixels(int size);
 
+        protected abstract IDecoder<TDecoderContainer> ResolveDecoder(ImageInformation.ImageType type);
+
+        protected abstract Task<TDecoderContainer> TransformAsync(TDecoderContainer bitmap, IList<ITransformation> transformations, string path, ImageSource source, bool isPlaceholder);
+
         public bool IsCancelled
         {
             get
@@ -232,24 +237,19 @@ namespace FFImageLoading.Work
             try
             {
                 CancellationTokenSource?.Token.ThrowIfCancellationRequested();
-                if (Target != null && !Target.IsTaskValid(this))
-                    throw new TaskCanceledException();
             }
             catch (ObjectDisposedException)
             {
             }
         }
 
-        public virtual bool UsesSameNativeControl(IImageLoaderTask anotherTask)
-        {
-            return Target != null && Target.UsesSameNativeControl(anotherTask);
-        }
-
         public void Cancel()
         {
             if (!_isDisposed)
             {
-                Target?.SetImageLoadingTask(null);
+                if (IsCancelled || IsCompleted)
+                    return;
+
                 ImageService.RemovePendingTask(this);
 
                 try
@@ -265,13 +265,7 @@ namespace FFImageLoading.Work
             }
         }
 
-        public void CancelIfNeeded()
-        {
-            if (!IsCancelled && !IsCompleted)
-                Cancel();
-        }
-
-        protected abstract Task<TImageContainer> GenerateImageAsync(string path, ImageSource source, Stream imageData, ImageInformation imageInformation, bool enableTransformations, bool isPlaceholder);
+        protected abstract Task<TImageContainer> GenerateImageFromDecoderContainerAsync(IDecodedImage<TDecoderContainer> decoded, ImageInformation imageInformation, bool isPlaceholder);
 
         protected abstract Task SetTargetAsync(TImageContainer image, bool animated);
 
@@ -279,21 +273,40 @@ namespace FFImageLoading.Work
 
         protected virtual void AfterLoading(TImageContainer image, bool fromMemoryCache) { }
 
+        async Task<TImageContainer> GenerateImageAsync(string path, ImageSource source, Stream imageData, ImageInformation imageInformation, bool enableTransformations, bool isPlaceholder)
+        {
+            using (imageData)
+            {
+                var decoder = ResolveDecoder(imageInformation.Type);
+                var decoderContainer = await decoder.DecodeAsync(imageData, path, source, imageInformation, Parameters);
+
+                if (enableTransformations && Parameters.Transformations != null && Parameters.Transformations.Count > 0)
+                {
+                    var transformations = Parameters.Transformations.ToList();
+
+                    if (decoderContainer.IsAnimated)
+                    {
+                        for (int i = 0; i < decoderContainer.AnimatedImages.Length; i++)
+                        {
+                            decoderContainer.AnimatedImages[i].Image = await TransformAsync(decoderContainer.AnimatedImages[i].Image, transformations, path, source, isPlaceholder);
+                        }
+                    }
+                    else
+                    {
+                        decoderContainer.Image = await TransformAsync(decoderContainer.Image, transformations, path, source, isPlaceholder);
+                    }
+                }
+
+                return await GenerateImageFromDecoderContainerAsync(decoderContainer, imageInformation, isPlaceholder);
+            }
+        }
+
         public async virtual Task<bool> TryLoadFromMemoryCacheAsync()
         {
             try
             {
                 if (Parameters.Preload && Parameters.CacheType.HasValue && Parameters.CacheType.Value == CacheType.Disk)
                     return false;
-
-                if (Parameters.DelayInMs.HasValue && Parameters.DelayInMs.Value > 0)
-                {
-                    await Task.Delay(Parameters.DelayInMs.Value).ConfigureAwait(false);
-                }
-                else if (Configuration.DelayInMs > 0)
-                {
-                    await Task.Delay(Configuration.DelayInMs).ConfigureAwait(false); ;
-                }
 
                 ThrowIfCancellationRequested();
 
@@ -432,7 +445,7 @@ namespace FFImageLoading.Work
                         loadImageData = await loadResolver.Resolve(path, Parameters, CancellationTokenSource.Token).ConfigureAwait(false);
                         ThrowIfCancellationRequested();
 
-                        using ( loadImageData.Item1)
+                        using (loadImageData.Item1)
                         {
                             loadImage = await GenerateImageAsync(path, source, loadImageData.Item1, loadImageData.Item3, TransformPlaceholders, true).ConfigureAwait(false);
                             if (loadImage != default(TImageContainer))
@@ -457,6 +470,9 @@ namespace FFImageLoading.Work
                 }
                 catch (Exception ex)
                 {
+                    if (ex is OperationCanceledException)
+                        throw;
+
                     Logger.Error("Setting placeholder failed", ex);
                 }
             }
@@ -476,6 +492,15 @@ namespace FFImageLoading.Work
                 // LOAD IMAGE
                 if (!(await TryLoadFromMemoryCacheAsync().ConfigureAwait(false)))
                 {
+                    if (Parameters.DelayInMs.HasValue && Parameters.DelayInMs.Value > 0)
+                    {
+                        await Task.Delay(Parameters.DelayInMs.Value).ConfigureAwait(false);
+                    }
+                    else if (!Parameters.Preload && Configuration.DelayInMs > 0)
+                    {
+                        await Task.Delay(Configuration.DelayInMs).ConfigureAwait(false);
+                    }
+
                     Logger.Debug(string.Format("Generating/retrieving image: {0}", Key));
                     var resolver = Parameters.CustomDataResolver ?? DataResolverFactory.GetResolver(Parameters.Path, Parameters.Source, Parameters, Configuration);
                     resolver = new WrappedDataResolver(resolver);
@@ -618,7 +643,6 @@ namespace FFImageLoading.Work
         {
             if (!_isDisposed)
             {
-                Target?.SetImageLoadingTask(null);
                 Parameters.TryDispose();
                 CancellationTokenSource.TryDispose();
 
