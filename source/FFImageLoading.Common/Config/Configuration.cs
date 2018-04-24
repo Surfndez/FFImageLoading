@@ -31,11 +31,13 @@ namespace FFImageLoading.Config
             VerboseLogging = false;
             SchedulerMaxParallelTasks = Math.Min(4, Math.Max(2, (int)(Environment.ProcessorCount / 2d)));
             DiskCacheDuration = TimeSpan.FromDays(30d);
+            TryToReadDiskCacheDurationFromHttpHeaders = true;
             ExecuteCallbacksOnUIThread = false;
             StreamChecksumsAsKeys = true;
             AnimateGifs = true;
             DelayInMs = 14; //Task.Delay resolution is around 15ms
             ClearMemoryCacheOnOutOfMemory = true;
+            InvalidateLayout = true;
         }
 
         /// <summary>
@@ -221,6 +223,13 @@ namespace FFImageLoading.Config
         public TimeSpan DiskCacheDuration { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether try to read
+        /// disk cache duration from http headers .
+        /// </summary>
+        /// <value><c>true</c> if try to read disk cache duration from http headers; otherwise, <c>false</c>.</value>
+        public bool TryToReadDiskCacheDurationFromHttpHeaders { get; set; }
+
+        /// <summary>
         /// Gets or sets a value indicating whether callbacs (OnFinish, OnSuccess, etc)
         /// should execute on UI thread
         /// </summary>
@@ -239,6 +248,12 @@ namespace FFImageLoading.Config
         /// </summary>
         /// <value><c>true</c> if clear memory cache on out of memory; otherwise, <c>false</c>.</value>
         public bool ClearMemoryCacheOnOutOfMemory { get; set; }
+
+        /// <summary>
+        /// Specifies if view layout should be invalidated after image is loaded
+        /// </summary>
+        /// <value><c>true</c> if invalidate layout; otherwise, <c>false</c>.</value>
+        public bool InvalidateLayout { get; set;  }
     }
 }
 

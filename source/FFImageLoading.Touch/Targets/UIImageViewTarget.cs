@@ -20,6 +20,8 @@ namespace FFImageLoading.Targets
             if (control == null) return;
             if (control.Image == image && (control.Image?.Images == null || control.Image.Images.Length <= 1))
                 return;
+
+            var isLayoutNeeded = IsLayoutNeeded(task, control.Image, image);
             
             var parameters = task.Parameters;
             if (animated)
@@ -37,6 +39,9 @@ namespace FFImageLoading.Targets
                             control.Image = null;
 
                         control.Image = image;
+
+                        if (isLayoutNeeded)
+                            control.SetNeedsLayout(); // It's needed for cells, etc
                     },
                     () => { });
             }
@@ -45,7 +50,46 @@ namespace FFImageLoading.Targets
                 if (control.Image?.Images != null && control.Image.Images.Length > 1)
                     control.Image = null;
                 control.Image = image;
+
+                if (isLayoutNeeded)
+                    control.SetNeedsLayout(); // It's needed for cells, etc
             }
+        }
+
+        bool IsLayoutNeeded(IImageLoaderTask task, UIImage oldImage, UIImage newImage)
+        {
+            if (task.Parameters.InvalidateLayoutEnabled.HasValue)
+            {
+                if (!task.Parameters.InvalidateLayoutEnabled.Value)
+                    return false;
+            }
+            else if (!task.Configuration.InvalidateLayout)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (oldImage == null && newImage == null)
+                    return false;
+
+                if (oldImage == null && newImage != null)
+                    return true;
+
+                if (oldImage != null && newImage == null)
+                    return true;
+
+                if (oldImage != null && newImage != null)
+                {
+                    return !(oldImage.Size.Width == newImage.Size.Width && oldImage.Size.Height == newImage.Size.Height);
+                }
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         public override void SetAsEmpty(IImageLoaderTask task)

@@ -202,6 +202,13 @@ namespace FFImageLoading.Cross
             set { if (_transformations != value) { _transformations = value; OnPropertyChanged(nameof(Transformations)); } }
         }
 
+        bool? _invalidateLayoutAfterLoaded;
+        public bool? InvalidateLayoutAfterLoaded
+        {
+            get { return _invalidateLayoutAfterLoaded; }
+            set { if (_invalidateLayoutAfterLoaded != value) { _invalidateLayoutAfterLoaded = value; OnPropertyChanged(nameof(InvalidateLayoutAfterLoaded)); } }
+        }
+
         IDataResolver _customDataResolver;
         public IDataResolver CustomDataResolver
         {
@@ -400,6 +407,9 @@ namespace FFImageLoading.Cross
                     imageLoader.Transform(Transformations);
                 }
 
+                if (InvalidateLayoutAfterLoaded.HasValue)
+                    imageLoader.InvalidateLayout(InvalidateLayoutAfterLoaded.Value);
+
                 imageLoader.WithPriority(LoadingPriority);
                 if (CacheType.HasValue)
                 {
@@ -460,7 +470,7 @@ namespace FFImageLoading.Cross
                 return null;
 
             if (imageStream != null)
-                return new ImageSourceBinding(ImageSource.Stream, "Stream");
+                return new ImageSourceBinding(imageStream);
 
             if (imagePath.StartsWith("res:", StringComparison.OrdinalIgnoreCase))
             {

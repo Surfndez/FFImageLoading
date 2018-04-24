@@ -37,11 +37,8 @@ namespace FFImageLoading
         {
             get
             {
-                lock (_initializeLock)
-                {
-                    InitializeIfNeeded(_config);
-                    return _config;
-                }
+                InitializeIfNeeded();
+                return _config;
             }
         }
 
@@ -67,9 +64,6 @@ namespace FFImageLoading
 
         public void Initialize(Configuration configuration)
         {
-            if (_isInitializing)
-                return;
-            
             lock (_initializeLock)
             {
                 _initialized = false;
@@ -135,7 +129,9 @@ namespace FFImageLoading
                     }
                 }
 
-                userDefinedConfig.Logger = new MiniLoggerWrapper(userDefinedConfig.Logger ?? CreatePlatformLoggerInstance(userDefinedConfig), userDefinedConfig.VerboseLogging);
+                if (userDefinedConfig.Logger == null || !(userDefinedConfig.Logger is MiniLoggerWrapper))
+                    userDefinedConfig.Logger = new MiniLoggerWrapper(userDefinedConfig.Logger ?? CreatePlatformLoggerInstance(userDefinedConfig), userDefinedConfig.VerboseLogging);
+
                 userDefinedConfig.MD5Helper = userDefinedConfig.MD5Helper ?? CreatePlatformMD5HelperInstance(userDefinedConfig);
                 userDefinedConfig.HttpClient = httpClient;
                 userDefinedConfig.Scheduler = userDefinedConfig.Scheduler ?? new WorkScheduler(userDefinedConfig, (userDefinedConfig.VerbosePerformanceLogging ? CreatePlatformPerformanceInstance(userDefinedConfig) : new EmptyPlatformPerformance()));

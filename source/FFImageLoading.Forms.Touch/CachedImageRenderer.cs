@@ -10,29 +10,36 @@ using FFImageLoading.Extensions;
 using System.Threading.Tasks;
 using FFImageLoading.Helpers;
 using FFImageLoading.Forms.Args;
+using FFImageLoading.Forms.Platform;
 
 #if __IOS__
 using UIKit;
 using PImage = UIKit.UIImage;
 using PImageView = UIKit.UIImageView;
 using Xamarin.Forms.Platform.iOS;
-using FFImageLoading.Forms.Touch;
+
 #elif __MACOS__
 using AppKit;
 using PImage = AppKit.NSImage;
-using PImageView = FFImageLoading.Forms.Mac.CachedImageRenderer.FormsNSImageView;
+using PImageView = FFImageLoading.Forms.Platform.CachedImageRenderer.FormsNSImageView;
 using Xamarin.Forms.Platform.MacOS;
-using FFImageLoading.Forms.Mac;
 using System.IO;
 #endif
 
 #if __IOS__
-[assembly: ExportRenderer(typeof(CachedImage), typeof(CachedImageRenderer))]
 namespace FFImageLoading.Forms.Touch
 #elif __MACOS__
-[assembly: ExportRenderer(typeof(CachedImage), typeof(CachedImageRenderer))]
 namespace FFImageLoading.Forms.Mac
 #endif
+{
+    [Obsolete("Use the same class in FFImageLoading.Forms.Platform namespace")]
+    public class CachedImageRenderer : FFImageLoading.Forms.Platform.CachedImageRenderer
+    {
+    }
+
+}
+
+namespace FFImageLoading.Forms.Platform
 {
     /// <summary>
     /// CachedImage Implementation
@@ -40,6 +47,11 @@ namespace FFImageLoading.Forms.Mac
     [Preserve(AllMembers = true)]
     public class CachedImageRenderer : ViewRenderer<CachedImage, PImageView>
     {
+        [RenderWith(typeof(CachedImageRenderer))]
+        internal class _CachedImageRenderer
+        {
+        }
+
         bool _isSizeSet;
         private bool _isDisposed;
         private IScheduledWork _currentTask;
@@ -51,12 +63,16 @@ namespace FFImageLoading.Forms.Mac
         /// </summary>
         public static new void Init()
         {
-            ScaleHelper.Init();
+            CachedImage.IsRendererInitialized = true;
+
             // needed because of this STUPID linker issue: https://bugzilla.xamarin.com/show_bug.cgi?id=31076
 #pragma warning disable 0219
             var ignore1 = typeof(CachedImageRenderer);
             var ignore2 = typeof(CachedImage);
 #pragma warning restore 0219
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+            ScaleHelper.InitAsync();
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
         }
 
         protected override void Dispose(bool disposing)

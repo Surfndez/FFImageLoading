@@ -30,8 +30,12 @@ namespace FFImageLoading.Work
 
         public PlatformImageLoaderTask(ITarget<PImage, TImageView> target, TaskParameter parameters, IImageService imageService) : base(ImageCache.Instance, target, parameters, imageService)
         {
-            // do not remove! Kicks scale retrieval so it's available for all, without deadlocks due to accessing MainThread
-            ScaleHelper.Init();
+        }
+
+        public async override Task Init()
+        {
+            await ScaleHelper.InitAsync();
+            await base.Init();
         }
 
         protected override Task SetTargetAsync(PImage image, bool animated)
@@ -120,21 +124,28 @@ namespace FFImageLoading.Work
 #elif __MACOS__
                 using (var mutableData = NSMutableData.Create())
                 {
-                    using (var destintation = CGImageDestination.Create(mutableData, MobileCoreServices.UTType.GIF, decoded.AnimatedImages.Length))
+                    var fileOptions = new CGImageDestinationOptions();
+                    fileOptions.GifDictionary = new NSMutableDictionary();
+                    fileOptions.GifDictionary[ImageIO.CGImageProperties.GIFLoopCount] = new NSString("0");
+                    //options.GifDictionary[ImageIO.CGImageProperties.GIFHasGlobalColorMap] = new NSString("true");
+
+                    using (var destintation = CGImageDestination.Create(mutableData, MobileCoreServices.UTType.GIF, decoded.AnimatedImages.Length, fileOptions))
                     {
                         for (int i = 0; i < decoded.AnimatedImages.Length; i++)
                         {
                             var options = new CGImageDestinationOptions();
                             options.GifDictionary = new NSMutableDictionary();
-                            options.GifDictionary[ImageIO.CGImageProperties.GIFDelayTime] = NSNumber.FromDouble(decoded.AnimatedImages[i].Delay / 100.0d);
-
+                            options.GifDictionary[ImageIO.CGImageProperties.GIFUnclampedDelayTime] = new NSString(decoded.AnimatedImages[i].Delay.ToString());
                             destintation.AddImage(decoded.AnimatedImages[i].Image.CGImage, options);
                         }
+
                         destintation.Close();
                     }
 
-                    // TODO I really don't know why it's not working. Anyone?
                     result = new PImage(mutableData);
+
+                    // TODO I really don't know why representations count is 1, anyone?
+                    // var test = result.Representations();
                 }
 #endif                
             }

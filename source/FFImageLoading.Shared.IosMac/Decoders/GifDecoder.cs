@@ -97,7 +97,7 @@ namespace FFImageLoading.Decoders
                 IAnimatedImage<PImage>[] images = null;
 
                 // GIF
-                if (sourceRef.ImageCount > 1 && config.AnimateGifs)
+                if (sourceRef.ImageCount > 1 && config.AnimateGifs && imageinformation.Type != ImageInformation.ImageType.ICO)
                 {
                     lock (_gifLock)
                     {
@@ -121,12 +121,20 @@ namespace FFImageLoading.Decoders
                         var delays = GetDelays(sourceRef);
                         var totalDuration = delays.Sum();
                         var adjustedFrames = AdjustFramesToSpoofDurations(frames, destScale, delays, totalDuration);
+                        var avgDuration = (double)totalDuration / adjustedFrames.Length;
+
+                        if (avgDuration < 10)
+                        {
+                            var nth = (int)(10 / avgDuration);
+                            avgDuration = avgDuration * nth;
+                            adjustedFrames = adjustedFrames.Where((value, index) => index % nth == 0).ToArray();
+                        }
 
                         images = new AnimatedImage<PImage>[adjustedFrames.Length];
 
                         for (int i = 0; i < images.Length; i++)
                         {
-                            images[i] = new AnimatedImage<PImage>() { Image = adjustedFrames[i], Delay = delays[i] };
+                            images[i] = new AnimatedImage<PImage>() { Image = adjustedFrames[i], Delay = (int)avgDuration };
                         }
 #elif __MACOS__
                         images = new AnimatedImage<PImage>[frameCount];

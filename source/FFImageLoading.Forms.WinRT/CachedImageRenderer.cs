@@ -14,9 +14,9 @@ using System.Reflection;
 using System.Linq;
 using FFImageLoading.Helpers;
 using Xamarin.Forms;
+using FFImageLoading.Forms.Platform;
 
 #if WINDOWS_UWP
-using FFImageLoading.Forms.WinUWP;
 using Xamarin.Forms.Platform.UWP;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Media;
@@ -24,7 +24,6 @@ using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Controls;
 
 #else
-using FFImageLoading.Forms.WinRT;
 using Xamarin.Forms.Platform.WinRT;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Media;
@@ -32,12 +31,20 @@ using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Controls;
 #endif
 
-[assembly: ExportRenderer(typeof(CachedImage), typeof(CachedImageRenderer))]
 #if WINDOWS_UWP
 namespace FFImageLoading.Forms.WinUWP
 #else
 namespace FFImageLoading.Forms.WinRT
 #endif
+{
+    [Obsolete("Use the same class in FFImageLoading.Forms.Platform namespace")]
+    public class CachedImageRenderer : FFImageLoading.Forms.Platform.CachedImageRenderer
+    {
+    }
+
+}
+
+namespace FFImageLoading.Forms.Platform
 {
     /// <summary>
     /// CachedImage Implementation
@@ -45,6 +52,11 @@ namespace FFImageLoading.Forms.WinRT
     [Preserve(AllMembers = true)]
     public class CachedImageRenderer : ViewRenderer<CachedImage, Windows.UI.Xaml.Controls.Image>
     {
+        [RenderWith(typeof(CachedImageRenderer))]
+        internal class _CachedImageRenderer
+        {
+        }
+
         bool _isSizeSet;
         private bool _measured;
         private IScheduledWork _currentTask;
@@ -56,7 +68,10 @@ namespace FFImageLoading.Forms.WinRT
         /// </summary>
         public static void Init()
         {
-            ScaleHelper.Init();
+            CachedImage.IsRendererInitialized = true;
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+            ScaleHelper.InitAsync();
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
         }
 
         public override SizeRequest GetDesiredSize(double widthConstraint, double heightConstraint)

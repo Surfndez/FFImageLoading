@@ -42,11 +42,10 @@ Features:
 		<dependencies>
 
 			<group targetFramework="Xamarin.iOS10">
-				<dependency id="WebP.Touch" version="1.0.7" />
+				<dependency id="WebP.Touch" version="1.0.8" />
 			</group>
 
 			<group targetFramework="MonoAndroid10">
-				<dependency id="Xamarin.Android.Support.Exif" version="25.1.0" />
 			</group>			
 
 		</dependencies>
